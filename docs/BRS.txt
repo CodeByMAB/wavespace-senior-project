@@ -1,0 +1,93 @@
+Business Requirements Specification
+Wavespace‑Senior‑Project – Bitcoin Lightning Wallet
+Version 1.0 | Prepared by: MAB
+Date: 2026‑01‑22
+
+### 1. Purpose
+This Business Requirements Specification (BRS) documents the high‑level business objectives, key stakeholders, target users, functional and non‑functional requirements, constraints, and assumptions that will guide the development of an on‑device Bitcoin Lightning Wallet. The wallet will enable users to manage on‑chain Bitcoin, open and manage Lightning Channels, issue and pay Lightning invoices, and view balances and transaction histories, all from a single application.
+
+### 2. Scope
+| Component	| In Scope | Out of Scope | Notes |
+| Ledger Storage – Local encrypted DB | Multi‑device sync | Cloud backup (future sprint) | ?? |
+| Lightning Connector – RPC/REST to a Lightning node | Payment routing across channels | Custom Lightning network integration (e.g., custom node) | To-do |
+| User Interface – Desktop/Web Mobile/App | User onboarding | Native mobile versions | To-do |
+| Compliance – KYC/AML | Regulatory reporting | Full KYC process integration | To-do |
+
+### 3. Stakeholders
+| Stakeholder | Role | Influence |
+| Product Owner | Defines, prioritizes and reviews requirements. | High |
+| Engineering Team | Implements, tests and hands over product. | High |
+| QA & Test Engineering | Ensures quality, writes tests. | Medium |
+| UX/UI Designer | Designs intuitive interface. | Medium |
+| Legal/Compliance | Ensures regulatory alignment. | High |
+| End‑Users	| Traders, everyday users, node operators. | Medium |
+
+### 4. User Personas
+| Persona | Goals | Pain Points |
+| Trader “Ted” | Rapid payment, low latency, view channel stats | Complex setup process, uncertain fees |
+| Everyday User “Eve” | Simple, secure payments for groceries, auto‑converts BTC to Lightning | Unfamiliar with blockchain jargon |
+| Node Operator “Omar” | Manage multiple channels, receive invoices, monitor health | Needs analytics, automated alerts |
+
+### 5. Business Objectives
+| Objective | KPI | Target |
+| Adoption | Number of wallet installs | 100 users by end‑Q2 |
+| Usage | Number of lightning payments per user	| > 5 payments/month |
+| Security | Zero critical vulnerabilities | OWASP Top‑10 compliance |
+| Performance | Avg. channel open time | < 30 s |
+| Support | Avg. resolution time | < 24 h |
+
+### 6. Functional Requirements
+| ID | Requirement | Description | Priority |
+| FR‑001 | Channel Management | Open, close, view status of Lightning channels. | Must |
+| FR‑002 | Invoice Handling | Create, sign, and broadcast Lightning invoices. | Must |
+| FR‑003 | Payment Execution | Send payments via channel, support fee estimation. | Must |
+| FR‑004 | Balance Overview | UI to show on‑chain and channel balances. | Must |
+| FR‑005 | Transaction History | List on‑chain and Lightning transactions. | Should |
+| FR‑006 | Backup & Restore | Encrypt & allow seed export/import. | Should |
+| FR‑007 | Security Alerts | Warn of unconfirmed channels or large balances. | Should |
+| FR‑008 | Support for Testnet | Ability to switch network for testing. | Should |
+
+### 7. Non‑Functional Requirements
+| Category | Requirement | Description |
+| Performance | Response time | UI updates < 500 ms; channel open < 30 s |
+| Reliability | Up‑time | 99.5 % uptime for daemon services |
+| Scalability | User concurrency | 1 k concurrent users without degradation |
+| Security | Data at rest | AES‑256 encryption of keys and DB |
+| Security | Data in transit | TLS 1.3 for all APIs |
+| Compliance | KYC/AML | Metadata for anti‑money‑laundering monitoring |
+| Privacy | GDPR | Option to delete all data |
+
+### 8. Constraints
+| Constraint | Impact |
+| Technology Stack | Must use web‑based front end (React/Electron) and a lightweight Lightning node connector (e.g., gRPC lnd). |
+| Regulatory | Must adhere to local financial regulations regarding crypto holdings and payments. |
+| Device | Initially desktop (Windows/macOS/Linux). Mobile support deferred to future sprints. |
+
+### 9. Assumptions
+Assumption	Rationale
+Users have stable internet connectivity	Needed for channel management and payment routing.
+Users can run a Lightning node locally or connect to a remote node	Simplifies design by abstracting full node setup.
+Initial launch focuses on the Bitcoin testnet	Allows rapid iteration without real‑money risk.
+
+### 10. Acceptance Criteria
+For each functional requirement, a set of Definition of Done (DoD) items and acceptance tests will be created in the sprint backlog. E.g.:
+
+FR‑001 – “Given a new wallet, when the system is started, then a unique BIP‑32 seed is generated and stored encrypted without user input.”
+FR‑003 – “Given an unfunded channel request, when the user approves, the channel opens in under 30 s and appears in the Channel list.”
+
+### 11. Deliverables
+Documentation – BRS, Use‑Case diagrams, API specification (openapi.yaml).
+Prototype – Working wallet with core features on testnet.
+Test Plan – Unit, integration, and acceptance test scripts.
+Release Notes – For each version update.
+
+### 12. Sign‑off
+| Role | Name | Signature | Date |
+| Product Owner |   |   |   |
+| Engineering Lead |   |   |   |
+| QA Lead |   |   |   |
+| Legal/Compliance |   |   |   |		
+Prepared by: ___________________________
+
+Approved by: ____________________________
+
