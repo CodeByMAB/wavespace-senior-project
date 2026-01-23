@@ -72,7 +72,7 @@ Initial launch focuses on the Bitcoin testnet	Allows rapid iteration without rea
 ### 10. Acceptance Criteria
 For each functional requirement, a set of Definition of Done (DoD) items and acceptance tests will be created in the sprint backlog. E.g.:
 
-FR‑001 – “Given a new wallet, when the system is started, then a unique BIP‑32 seed is generated and stored encrypted without user input.”
+FR‑001 – “Given a lightning channel, when the system is started, the user can open, close, and view a channel using a simple user interface.”
 FR‑003 – “Given an unfunded channel request, when the user approves, the channel opens in under 30 s and appears in the Channel list.”
 
 ### 11. Deliverables
@@ -83,9 +83,9 @@ Release Notes – For each version update.
 
 ### 12. Sign‑off
 | Role | Name | Signature | Date |
-| Product Owner |   |   |   |
-| Engineering Lead |   |   |   |
-| QA Lead |   |   |   |
+| Product Owner | Wave.Space  |   | 1/23/2026  |
+| Engineering Lead | MAB  |   | 1/23/2026  |
+| QA Lead |  |   |   |
 | Legal/Compliance |   |   |   |		
 Prepared by: ___________________________
 
