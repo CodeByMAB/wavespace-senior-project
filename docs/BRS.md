@@ -1,7 +1,7 @@
 Business Requirements Specification
 Wavespace‑Senior‑Project – Bitcoin Lightning Wallet
-Version 1.0 | Prepared by: MAB
-Date: 2026‑01‑22
+Version 1.1 | Prepared by: MAB
+Date: 2026‑01‑25
 
 ### 1. Purpose
 This Business Requirements Specification (BRS) documents the high‑level business objectives, key stakeholders, target users, functional and non‑functional requirements, constraints, and assumptions that will guide the development of an on‑device Bitcoin Lightning Wallet. The wallet will enable users to manage on‑chain Bitcoin, open and manage Lightning Channels, issue and pay Lightning invoices, and view balances and transaction histories, all from a single application.
@@ -9,9 +9,10 @@ This Business Requirements Specification (BRS) documents the high‑level busine
 ### 2. Scope
 | Component	| In Scope | Out of Scope | Notes |
 | Ledger Storage – Local encrypted DB | Multi‑device sync | Cloud backup (future sprint) | ?? |
-| Lightning Connector – RPC/REST to a Lightning node | Payment routing across channels | Custom Lightning network integration (e.g., custom node) | To-do |
-| User Interface – Desktop/Web Mobile/App | User onboarding | Native mobile versions | To-do |
-| Compliance – KYC/AML | Regulatory reporting | Full KYC process integration | To-do |
+| Lightning Connector – Breez SDK for Lightning node | Payment routing across channels | Custom Lightning network integration (e.g., custom node) | To-do |
+| User Interface – Mobile/App via App Stores (iOS / Play Store)| User onboarding | Native mobile versions | To-do |
+| Compliance – KYC/AML - Not Required | No reporting necessary | No KYC process integration | Done |
+| Wave.Space Services Integration | Integrate Wave.Space tools within wallet as widget for users | Tools made by other companies | If possible to implement | To-do |
 
 ### 3. Stakeholders
 | Stakeholder | Role | Influence |
@@ -33,19 +34,20 @@ This Business Requirements Specification (BRS) documents the high‑level busine
 | Adoption | Number of wallet installs | 100 users by end‑Q2 |
 | Usage | Number of lightning payments per user	| > 5 payments/month |
 | Security | Zero critical vulnerabilities | OWASP Top‑10 compliance |
-| Performance | Avg. channel open time | < 30 s |
+<--- | Performance | Avg. channel open time | < 30 s | ---> FIX
 | Support | Avg. resolution time | < 24 h |
 
 ### 6. Functional Requirements
 | ID | Requirement | Description | Priority |
-| FR‑001 | Channel Management | Open, close, view status of Lightning channels. | Must |
+| FR‑001 | Breez SDK Implementation | Proper usage of the Breez SDK for Bitcoin Lightning usage | Must |
 | FR‑002 | Invoice Handling | Create, sign, and broadcast Lightning invoices. | Must |
-| FR‑003 | Payment Execution | Send payments via channel, support fee estimation. | Must |
-| FR‑004 | Balance Overview | UI to show on‑chain and channel balances. | Must |
-| FR‑005 | Transaction History | List on‑chain and Lightning transactions. | Should |
-| FR‑006 | Backup & Restore | Encrypt & allow seed export/import. | Should |
-| FR‑007 | Security Alerts | Warn of unconfirmed channels or large balances. | Should |
-| FR‑008 | Support for Testnet | Ability to switch network for testing. | Should |
+| FR‑003 | Send via onchain and LNURL | Ability to send Bitcoin onchain and via LNURL | Must |
+| FR‑004 | Payment Execution | Send payments via channel, support fee estimation. | Must |
+| FR‑005 | Balance Overview | UI to show on‑chain and channel balances. | Must |
+| FR‑006 | Transaction History | List on‑chain and Lightning transactions. | Should |
+| FR‑007 | Backup & Restore | Encrypt & allow seed export/import. | Should |
+| FR‑008 | Security Alerts | Warn of unconfirmed channels or large balances. | Should |
+| FR‑009 | Support for Testnet | Ability to switch network for testing. | Should |
 
 ### 7. Non‑Functional Requirements
 | Category | Requirement | Description |
@@ -54,14 +56,15 @@ This Business Requirements Specification (BRS) documents the high‑level busine
 | Scalability | User concurrency | 1 k concurrent users without degradation |
 | Security | Data at rest | AES‑256 encryption of keys and DB |
 | Security | Data in transit | TLS 1.3 for all APIs |
-| Compliance | KYC/AML | Metadata for anti‑money‑laundering monitoring |
-| Privacy | GDPR | Option to delete all data |
+| Compliance | KYC/AML - None | Metadata for anti‑money‑laundering monitoring is not needed |
+| Privacy | GDPR | All Transactional data and keys will reside on the device only |
 
 ### 8. Constraints
 | Constraint | Impact |
-| Technology Stack | Must use web‑based front end (React/Electron) and a lightweight Lightning node connector (e.g., gRPC lnd). |
+| Technology Stack | Must use web‑based front end (React/Electron) and Breez SDK. |
+| Development Platform | Expo for deployment of the application. |
 | Regulatory | Must adhere to local financial regulations regarding crypto holdings and payments. |
-| Device | Initially desktop (Windows/macOS/Linux). Mobile support deferred to future sprints. |
+| Device | Mobile phones (iOS/Android), not desktop |
 
 ### 9. Assumptions
 Assumption	Rationale
@@ -83,7 +86,7 @@ Release Notes – For each version update.
 
 ### 12. Sign‑off
 | Role | Name | Signature | Date |
-| Product Owner | Wave.Space  |   | 1/23/2026  |
+| Product Owner | Wave.Space |   | 1/23/2026  |
 | Engineering Lead | MAB  |   | 1/23/2026  |
 | QA Lead |  |   |   |
 | Legal/Compliance |   |   |   |		
