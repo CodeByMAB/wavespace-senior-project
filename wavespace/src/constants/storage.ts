@@ -12,4 +12,5 @@ export const ASYNC_KEYS = {
   ONBOARDING_COMPLETED: 'wavespace_onboarding_completed',
   NETWORK_SELECTION: 'wavespace_network_selection',
   USER_PREFERENCES: 'wavespace_user_preferences',
+  NODE_STATE_CACHE: 'wavespace_node_state_cache',
 } as const;
