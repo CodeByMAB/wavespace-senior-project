@@ -1,0 +1,43 @@
+{
+  "name": "wavespace",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@breeztech/breez-sdk-spark-react-native": "^0.10.0",
+    "@noble/ciphers": "^2.1.1",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-navigation/native": "^7.1.31",
+    "@react-navigation/native-stack": "^7.14.5",
+    "bcryptjs": "^3.0.3",
+    "bip39": "^3.1.0",
+    "expo": "~55.0.3",
+    "expo-camera": "~55.0.9",
+    "expo-clipboard": "~55.0.8",
+    "expo-constants": "~55.0.7",
+    "expo-file-system": "^55.0.10",
+    "expo-local-authentication": "~55.0.8",
+    "expo-screen-capture": "~55.0.8",
+    "expo-secure-store": "~55.0.8",
+    "expo-sharing": "~55.0.10",
+    "expo-status-bar": "~55.0.4",
+    "expo-updates": "~55.0.11",
+    "react": "19.2.0",
+    "react-native": "0.83.2",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
+    "react-native-svg": "15.15.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/bip39": "^2.4.2",
+    "@types/react": "~19.2.2",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}
