@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "plugins": [
+      "@breeztech/breez-sdk-spark-react-native",
+      "expo-camera",
+      "expo-local-authentication",
+      "expo-secure-store",
+      "expo-sharing"
+    ],
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "Required for QR code scanning",
+        "NSFaceIDUsageDescription": "Required for biometric authentication"
+      },
+      "bundleIdentifier": "com.anonymous.wavespace"
+    },
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "USE_BIOMETRIC",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ],
+      "package": "com.anonymous.wavespace"
+    }
+  }
+}
