@@ -1,0 +1,293 @@
+import React, {useState} from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useNavigation} from '@react-navigation/native';
+import {Header} from '@components/common/Header';
+import {Card} from '@components/common/Card';
+import {Button} from '@components/common/Button';
+import {Input} from '@components/common/Input';
+import {BottomSheet} from '@components/common/BottomSheet';
+import {useWallet} from '@context/WalletContext';
+import {colors, spacing, typography, borderRadius} from '@theme/index';
+import {formatSats, satsToFiat} from '@utils/formatters';
+import type {FeeSpeed} from '@/types/wallet';
+
+const FEE_OPTIONS: {key: FeeSpeed; label: string; rate: number; time: string}[] = [
+  {key: 'low', label: 'Low', rate: 1, time: '~60 min'},
+  {key: 'medium', label: 'Medium', rate: 5, time: '~30 min'},
+  {key: 'high', label: 'High', rate: 20, time: '~10 min'},
+];
+
+export function WithdrawScreen() {
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const {withdrawOnchain} = useWallet();
+  const [address, setAddress] = useState('');
+  const [amount, setAmount] = useState('');
+  const [selectedFee, setSelectedFee] = useState<FeeSpeed>('medium');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const amountSats = parseInt(amount || '0', 10);
+  const feeOption = FEE_OPTIONS.find(f => f.key === selectedFee)!;
+  const estimatedFee = feeOption.rate * 250;
+  const isValidAddress = address.startsWith('bc1') || address.startsWith('tb1') || address.startsWith('3') || address.startsWith('1');
+  const canWithdraw = address.length > 0 && isValidAddress && amountSats > 0;
+
+  const handleConfirmWithdraw = async () => {
+    setLoading(true);
+    try {
+      await withdrawOnchain(address, amountSats, feeOption.rate);
+      setShowConfirm(false);
+      Alert.alert(
+        'Withdrawal Submitted',
+        'Your on-chain withdrawal has been broadcast.',
+        [{text: 'OK', onPress: () => navigation.goBack()}],
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={[styles.container, {backgroundColor: colors.background}]}>
+      <Header
+        title="Withdraw to External Wallet"
+        onClose={() => navigation.goBack()}
+      />
+
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          {paddingBottom: insets.bottom + spacing.xl},
+        ]}
+        keyboardShouldPersistTaps="handled">
+        <Card variant="outline" padding="md">
+          <Text style={styles.infoText}>
+            This will send funds from your Lightning wallet to an external
+            Bitcoin address. On-chain transactions have higher fees and are
+            slower than Lightning.
+          </Text>
+        </Card>
+
+        <Input
+          label="DESTINATION BITCOIN ADDRESS"
+          placeholder="bc1q..."
+          value={address}
+          onChangeText={setAddress}
+          autoCapitalize="none"
+          error={address.length > 0 && !isValidAddress ? 'Invalid address format' : undefined}
+        />
+
+        <View>
+          <Text style={styles.label}>AMOUNT</Text>
+          <TextInput
+            style={styles.amountInput}
+            placeholder="0"
+            placeholderTextColor={colors.textTertiary}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="numeric"
+          />
+          <Text style={styles.fiatConversion}>
+            {'\u2248'} {satsToFiat(amountSats)}
+          </Text>
+        </View>
+
+        <View>
+          <Text style={styles.label}>FEE PRIORITY</Text>
+          <View style={styles.feeRow}>
+            {FEE_OPTIONS.map(opt => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[
+                  styles.feeOption,
+                  selectedFee === opt.key && styles.feeOptionActive,
+                ]}
+                onPress={() => setSelectedFee(opt.key)}>
+                <Text style={styles.feeLabel}>{opt.label}</Text>
+                <Text style={styles.feeRate}>
+                  ~{formatSats(opt.rate * 250)} sats
+                </Text>
+                <Text style={styles.feeTime}>{opt.time}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <Card>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Amount</Text>
+            <Text style={styles.detailValue}>{formatSats(amountSats)} sats</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>On-chain Fee</Text>
+            <Text style={styles.detailValue}>~{formatSats(estimatedFee)} sats</Text>
+          </View>
+          <View style={[styles.detailRow, {borderBottomWidth: 0}]}>
+            <Text style={styles.detailLabel}>Total Deducted</Text>
+            <Text style={[styles.detailValue, {color: colors.primary, fontWeight: '700'}]}>
+              {formatSats(amountSats + estimatedFee)} sats
+            </Text>
+          </View>
+        </Card>
+
+        <Card variant="outline" padding="md">
+          <Text style={[styles.warningText]}>
+            Withdrawals are irreversible. Please verify the destination address
+            carefully.
+          </Text>
+        </Card>
+
+        <Button
+          title="Review Withdrawal"
+          onPress={() => setShowConfirm(true)}
+          disabled={!canWithdraw}
+        />
+      </ScrollView>
+
+      <BottomSheet
+        visible={showConfirm}
+        onClose={() => setShowConfirm(false)}>
+        <Text style={styles.sheetTitle}>Confirm Withdrawal</Text>
+        <View style={styles.sheetDetail}>
+          <Text style={styles.detailLabel}>To</Text>
+          <Text style={[styles.detailValue, {fontSize: 12}]} numberOfLines={1}>
+            {address}
+          </Text>
+        </View>
+        <View style={styles.sheetDetail}>
+          <Text style={styles.detailLabel}>Amount</Text>
+          <Text style={styles.detailValue}>{formatSats(amountSats)} sats</Text>
+        </View>
+        <View style={styles.sheetDetail}>
+          <Text style={styles.detailLabel}>Fee ({feeOption.label})</Text>
+          <Text style={styles.detailValue}>~{formatSats(estimatedFee)} sats</Text>
+        </View>
+        <View style={styles.sheetDetail}>
+          <Text style={styles.detailLabel}>Total</Text>
+          <Text style={[styles.detailValue, {color: colors.primary}]}>
+            {formatSats(amountSats + estimatedFee)} sats
+          </Text>
+        </View>
+        <View style={{gap: spacing.sm, marginTop: spacing.lg}}>
+          <Button
+            title="Confirm Withdrawal"
+            onPress={handleConfirmWithdraw}
+            loading={loading}
+          />
+          <Button
+            title="Cancel"
+            variant="ghost"
+            onPress={() => setShowConfirm(false)}
+          />
+        </View>
+      </BottomSheet>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: spacing.xl,
+    gap: spacing.xl,
+  },
+  label: {
+    ...typography.label,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  amountInput: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    paddingVertical: spacing.xl,
+  },
+  fiatConversion: {
+    ...typography.bodyMedium,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  feeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  feeOption: {
+    flex: 1,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    gap: 4,
+  },
+  feeOptionActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  feeLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  feeRate: {
+    ...typography.bodyMedium,
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+  feeTime: {
+    ...typography.bodySmall,
+    color: colors.textTertiary,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  detailLabel: {
+    ...typography.bodyMedium,
+    color: colors.textSecondary,
+  },
+  detailValue: {
+    ...typography.bodyMedium,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  infoText: {
+    ...typography.bodySmall,
+    color: colors.info,
+    lineHeight: 18,
+  },
+  warningText: {
+    ...typography.bodySmall,
+    color: colors.warning,
+    lineHeight: 18,
+  },
+  sheetTitle: {
+    ...typography.h2,
+    color: colors.textPrimary,
+    marginBottom: spacing.lg,
+  },
+  sheetDetail: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+});

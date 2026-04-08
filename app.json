@@ -1,61 +1,37 @@
 {
   "expo": {
-    "name": "wavespace-wallet",
-    "slug": "wavespace-wallet",
+    "name": "wavespace",
+    "slug": "wavespace",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "wavespacewallet",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "icon": "./assets/images/icon.png",
     "ios": {
       "supportsTablet": false,
-      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.anonymous.wavespace",
       "infoPlist": {
-        "NSCameraUsageDescription": "Camera access is required to scan QR codes for payments.",
-        "NSFaceIDUsageDescription": "Face ID is used to securely access your wallet."
+        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera to scan QR codes.",
+        "NSFaceIDUsageDescription": "Allow $(PRODUCT_NAME) to use Face ID to securely access your wallet."
       }
     },
     "android": {
+      "package": "com.anonymous.wavespace",
       "permissions": [
         "CAMERA",
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT",
-        "CAMERA",
-        "USE_BIOMETRIC",
-        "USE_FINGERPRINT",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0D0D0D",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.wavespacewallet"
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      }
     },
     "plugins": [
-      [
-        "expo-splash-screen",
-        {
-          "backgroundColor": "#208AEF",
-          "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
-          }
-        }
-      ],
       "@breeztech/breez-sdk-spark-react-native",
       [
         "expo-camera",
@@ -69,10 +45,8 @@
           "faceIDPermission": "Allow $(PRODUCT_NAME) to use Face ID."
         }
       ],
+      "expo-secure-store",
       "expo-sharing"
-    ],
-    "experiments": {
-      "reactCompiler": true
-    }
+    ]
   }
 }
