@@ -13,7 +13,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParamList } from '@navigation/OnboardingStack';
 import { mnemonicToWords } from '@services/mnemonicService';
-import { storeMnemonic } from '@services/secureStorageService';
+import { deleteMnemonic, storeMnemonic } from '@services/secureStorageService';
 import { initializeWallet, mapSdkError } from '@services/walletService';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'MnemonicConfirm'>;
@@ -75,21 +75,34 @@ export default function MnemonicConfirmScreen({ navigation, route }: Props) {
     }
 
     setInitError('');
+    let mnemonicStored = false;
+    let walletReady = false;
     try {
       // 1. Persist mnemonic (AES-256-GCM encrypted)
       setInitStep('storing');
       await storeMnemonic(mnemonic);
+      mnemonicStored = true;
 
       // 2. Derive wallet keys and start Breez Spark sync (new wallet, no
       //    passphrase — the user may add one later via settings).
       setInitStep('initializing');
       await initializeWallet();
+      walletReady = true;
 
       setInitStep('syncing');
       await new Promise<void>((resolve) => setTimeout(resolve, 1500));
 
       navigation.navigate('PinSetup');
     } catch (err) {
+      if (mnemonicStored && !walletReady) {
+        try {
+          await deleteMnemonic();
+        } catch {
+          // Best-effort cleanup; original error is surfaced below.
+        }
+      }
+      setInputs({});
+      setErrors({});
       const message = mapSdkError(err, 'wallet setup');
       setInitError(message);
       Alert.alert('Setup Failed', message);

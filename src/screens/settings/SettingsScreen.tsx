@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import {useSettings} from '@context/SettingsContext';
@@ -15,13 +16,14 @@ import {useWallet} from '@context/WalletContext';
 import {useAuth} from '@context/AuthContext';
 import {Button} from '@components/common/Button';
 import {CopyableText} from '@components/common/CopyableText';
+import {ASYNC_KEYS} from '@constants/storage';
 import {colors, spacing} from '@theme/index';
 import type {Network} from '@/types/wallet';
 
 export function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const {state: settings, dispatch: settingsDispatch} = useSettings();
-  const {state: walletState} = useWallet();
+  const {state: walletState, reconnectAfterNetworkChange} = useWallet();
   const {dispatch: authDispatch} = useAuth();
 
   const handleNetworkChange = (network: Network) => {
@@ -32,7 +34,13 @@ export function SettingsScreen() {
         {text: 'Cancel', style: 'cancel'},
         {
           text: 'Switch',
-          onPress: () => settingsDispatch({type: 'SET_NETWORK', payload: network}),
+          onPress: () => {
+            void (async () => {
+              await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, network);
+              settingsDispatch({type: 'SET_NETWORK', payload: network});
+              await reconnectAfterNetworkChange();
+            })();
+          },
         },
       ],
     );

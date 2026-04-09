@@ -13,7 +13,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParamList } from '@navigation/OnboardingStack';
 import { validateMnemonic } from '@services/mnemonicService';
-import { storeMnemonic, storePassphrase } from '@services/secureStorageService';
+import { deleteMnemonic, storeMnemonic, storePassphrase } from '@services/secureStorageService';
 import { initializeWallet, mapSdkError } from '@services/walletService';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'RestoreWallet'>;
@@ -82,10 +82,13 @@ export default function RestoreWalletScreen({ navigation }: Props) {
     }
 
     setInitError('');
+    let mnemonicStored = false;
+    let walletReady = false;
     try {
       // 1. Persist mnemonic (AES-256-GCM encrypted)
       setInitStep('storing');
       await storeMnemonic(mnemonic);
+      mnemonicStored = true;
 
       // 2. Persist passphrase so future restorations use the same derivation
       //    parameters. An empty string clears any previously stored passphrase.
@@ -95,6 +98,7 @@ export default function RestoreWalletScreen({ navigation }: Props) {
       //    passphrase so the correct HD wallet branch is used from the start.
       setInitStep('initializing');
       await initializeWallet();
+      walletReady = true;
 
       setInitStep('syncing');
       // Allow the SDK a moment to begin its initial sync before navigating
@@ -102,6 +106,14 @@ export default function RestoreWalletScreen({ navigation }: Props) {
 
       navigation.navigate('PinSetup');
     } catch (err) {
+      if (mnemonicStored && !walletReady) {
+        try {
+          await deleteMnemonic();
+          await storePassphrase('');
+        } catch {
+          // Best-effort cleanup; original error is surfaced below.
+        }
+      }
       const message = mapSdkError(err, 'wallet restore');
       setInitError(message);
       Alert.alert('Restore Failed', message);

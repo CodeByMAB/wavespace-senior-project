@@ -3,8 +3,16 @@ import React, {
   useContext,
   useReducer,
   useMemo,
+  useState,
+  useCallback,
   ReactNode,
 } from 'react';
+import { Alert } from 'react-native';
+import {
+  type SdkEvent,
+  SdkEvent_Tags,
+  PaymentType,
+} from '@breeztech/breez-sdk-spark-react-native';
 import type {
   WalletState,
   WalletBalance,
@@ -15,7 +23,7 @@ import type {
 } from '@/types/wallet';
 import { useAuthContext } from '@context/AuthContext';
 import { useWallet as useWalletSdk } from '@hooks/useWallet';
-import type { NodeState } from '@services/walletService';
+import { disconnectWallet, type NodeState } from '@services/walletService';
 
 type WalletAction =
   | { type: 'SET_INITIALIZED'; payload: boolean }
@@ -86,6 +94,7 @@ function mergeSdkIntoWalletState(
     isSynced: boolean;
     isLoading: boolean;
     nodeState: NodeState | null;
+    transactions: Transaction[];
   }
 ): WalletState {
   const ns = sdk.nodeState;
@@ -108,17 +117,28 @@ function mergeSdkIntoWalletState(
     lightningBalanceSats: lightning,
     totalBalanceSats: total,
     onchainPendingSats: onchainPending,
+    ...(ns
+      ? {
+          inboundLiquiditySats: Number(ns.inboundLiquiditySats),
+          outboundLiquiditySats: Number(ns.outboundLiquiditySats),
+        }
+      : {}),
   };
 
   const isSyncing = sdk.isLoading || (sdk.isConnected && !sdk.isSynced);
 
+  const transactions =
+    sdk.transactions.length > 0 ? sdk.transactions : base.transactions;
+
   return {
     ...base,
     balance,
+    transactions,
     isInitialized: sdk.isConnected,
     isSyncing,
     nodeId: ns?.identityPubkey ?? base.nodeId,
-    network: (ns?.network as Network) ?? base.network,
+    /** Reflects the active SDK session only (cached node state while offline). */
+    network: (ns?.network as Network) ?? 'testnet',
   };
 }
 
@@ -127,6 +147,8 @@ interface WalletContextType {
   dispatch: React.Dispatch<WalletAction>;
   isLoading: boolean;
   sdkError: string | null;
+  /** Tears down the SDK, then reconnects so the next session uses the persisted network (e.g. after settings). */
+  reconnectAfterNetworkChange: () => Promise<void>;
   sendPayment: (invoice: string, amountSats: number) => Promise<void>;
   createInvoice: (amountSats: number, description?: string) => Promise<string>;
   withdrawOnchain: (address: string, amountSats: number, feeRate: number) => Promise<void>;
@@ -134,10 +156,48 @@ interface WalletContextType {
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
+function formatSats(amount: bigint): string {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return String(amount);
+  return `${n.toLocaleString()} sats`;
+}
+
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuthContext();
-  const sdk = useWalletSdk(isAuthenticated);
+  const [networkReconnectNonce, setNetworkReconnectNonce] = useState(0);
+
+  const onPaymentEvent = useCallback((event: SdkEvent) => {
+    switch (event.tag) {
+      case SdkEvent_Tags.PaymentSucceeded: {
+        const p = event.inner.payment;
+        const isReceive = p.paymentType === PaymentType.Receive;
+        Alert.alert(
+          isReceive ? 'Payment received' : 'Payment sent',
+          `${formatSats(p.amount)} ${isReceive ? 'received' : 'sent'} successfully.`,
+        );
+        break;
+      }
+      case SdkEvent_Tags.PaymentFailed: {
+        const p = event.inner.payment;
+        const isReceive = p.paymentType === PaymentType.Receive;
+        Alert.alert(
+          'Payment failed',
+          `Could not complete ${isReceive ? 'incoming' : 'outgoing'} payment (${formatSats(p.amount)}).`,
+        );
+        break;
+      }
+      default:
+        break;
+    }
+  }, []);
+
+  const sdk = useWalletSdk(isAuthenticated, networkReconnectNonce, onPaymentEvent);
   const [state, dispatch] = useReducer(walletReducer, initialState);
+
+  const reconnectAfterNetworkChange = useCallback(async () => {
+    await disconnectWallet();
+    setNetworkReconnectNonce((n) => n + 1);
+  }, []);
 
   const mergedState = useMemo(
     () =>
@@ -147,8 +207,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         isSynced: sdk.isSynced,
         isLoading: sdk.isLoading,
         nodeState: sdk.nodeState,
+        transactions: sdk.transactions,
       }),
-    [state, sdk.balanceSats, sdk.isConnected, sdk.isSynced, sdk.isLoading, sdk.nodeState]
+    [
+      state,
+      sdk.balanceSats,
+      sdk.isConnected,
+      sdk.isSynced,
+      sdk.isLoading,
+      sdk.nodeState,
+      sdk.transactions,
+    ]
   );
 
   const sendPayment = async (invoice: string, amountSats: number) => {
@@ -166,6 +235,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         bolt11: invoice,
       },
     });
+    await sdk.refreshNodeState();
+    await sdk.refreshTransactions();
   };
 
   const createInvoice = async (amountSats: number, description?: string): Promise<string> => {
@@ -197,6 +268,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         dispatch,
         isLoading: sdk.isLoading,
         sdkError: sdk.error,
+        reconnectAfterNetworkChange,
         sendPayment,
         createInvoice,
         withdrawOnchain,

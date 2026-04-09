@@ -1,6 +1,7 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {TransactionListItem} from '@components/transactions/TransactionListItem';
+import {EmptyState} from '@components/common/EmptyState';
 import type {Transaction} from '@/types/wallet';
 import {colors, spacing} from '@theme/index';
 
@@ -16,25 +17,38 @@ export function RecentTransactions({
   onTransactionPress,
 }: RecentTransactionsProps) {
   const recent = transactions.slice(0, 5);
+  const isEmpty = transactions.length === 0;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Recent</Text>
-        <TouchableOpacity onPress={onSeeAll} hitSlop={8}>
-          <Text style={styles.seeAll}>See All</Text>
-        </TouchableOpacity>
+        {!isEmpty ? (
+          <TouchableOpacity onPress={onSeeAll} hitSlop={8}>
+            <Text style={styles.seeAll}>See All</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
-      {recent.map((tx, i) => (
-        <React.Fragment key={tx.id}>
-          {i > 0 && <View style={styles.separator} />}
-          <TransactionListItem
-            transaction={tx}
-            onPress={() => onTransactionPress(tx)}
-          />
-        </React.Fragment>
-      ))}
+      {isEmpty ? (
+        <EmptyState
+          icon="swap-horizontal-outline"
+          title="No transactions yet"
+          subtitle="Payments you send or receive will show up here."
+        />
+      ) : (
+        recent.map((tx, i) => (
+          <React.Fragment key={tx.id}>
+            {i > 0 && <View style={styles.separator} />}
+            <TransactionListItem
+              transaction={tx}
+              onPress={() => onTransactionPress(tx)}
+            />
+          </React.Fragment>
+        ))
+      )}
     </View>
   );
 }
@@ -61,6 +75,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: colors.primary,
+  },
+  headerSpacer: {
+    width: 48,
   },
   separator: {
     height: 1,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   type SdkEvent,
@@ -11,11 +12,22 @@ import {
   registerEventListener,
   removeEventListener,
   getNodeState,
+  listTransactions,
   mapSdkError,
   logWalletOperation,
   type NodeState,
 } from '@services/walletService';
-import { ASYNC_KEYS } from '@constants/storage';
+import { ASYNC_KEYS, nodeStateCacheKey } from '@constants/storage';
+import type { Transaction } from '@/types/wallet';
+
+async function readPersistedNetwork(): Promise<'mainnet' | 'testnet'> {
+  try {
+    const raw = await AsyncStorage.getItem(ASYNC_KEYS.NETWORK_SELECTION);
+    return raw === 'mainnet' ? 'mainnet' : 'testnet';
+  } catch {
+    return 'testnet';
+  }
+}
 
 interface WalletState {
   balanceSats: bigint | null;
@@ -37,9 +49,18 @@ const INITIAL_STATE: WalletState = {
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
 
-export function useWallet(isAuthenticated: boolean) {
+export function useWallet(
+  isAuthenticated: boolean,
+  networkReconnectNonce = 0,
+  onPaymentEvent?: (event: SdkEvent) => void
+) {
   const [state, setState] = useState<WalletState>(INITIAL_STATE);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [appStateNonce, setAppStateNonce] = useState(0);
   const listenerIdRef = useRef<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+  const onPaymentEventRef = useRef(onPaymentEvent);
+  onPaymentEventRef.current = onPaymentEvent;
 
   /**
    * Generation counter. Incremented whenever a cleanup or a new connect
@@ -55,6 +76,15 @@ export function useWallet(isAuthenticated: boolean) {
    * initializeWallet() never races with an in-flight disconnect.
    */
   const cleanupPromiseRef = useRef<Promise<void>>(Promise.resolve());
+
+  const refreshTransactions = useCallback(async () => {
+    try {
+      const txs = await listTransactions();
+      setTransactions(txs);
+    } catch (err) {
+      logWalletOperation({ operation: 'listTransactions', error: err });
+    }
+  }, []);
 
   const refreshBalance = useCallback(async () => {
     try {
@@ -85,12 +115,47 @@ export function useWallet(isAuthenticated: boolean) {
         balanceSats: ns.balanceSats.toString(),
         pendingReceiveSats: ns.pendingReceiveSats.toString(),
         pendingSendSats: ns.pendingSendSats.toString(),
+        inboundLiquiditySats: ns.inboundLiquiditySats.toString(),
+        outboundLiquiditySats: ns.outboundLiquiditySats.toString(),
       };
-      AsyncStorage.setItem(ASYNC_KEYS.NODE_STATE_CACHE, JSON.stringify(toCache)).catch(() => {});
+      const cacheKey = nodeStateCacheKey(ns.network);
+      AsyncStorage.setItem(cacheKey, JSON.stringify(toCache)).catch(() => {});
     } catch (err) {
       logWalletOperation({ operation: 'refreshNodeState', error: err });
     }
   }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const prev = appStateRef.current;
+      appStateRef.current = next;
+
+      if (next === 'background' || next === 'inactive') {
+        sessionRef.current++;
+        setState(INITIAL_STATE);
+        setTransactions([]);
+        const id = listenerIdRef.current;
+        listenerIdRef.current = null;
+        cleanupPromiseRef.current = (async () => {
+          if (id) {
+            try {
+              await removeEventListener(id);
+            } catch {
+              // ignore
+            }
+          }
+          await disconnectWallet();
+        })();
+      } else if (
+        next === 'active' &&
+        isAuthenticated &&
+        (prev === 'background' || prev === 'inactive')
+      ) {
+        setAppStateNonce((n) => n + 1);
+      }
+    });
+    return () => sub.remove();
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -109,22 +174,29 @@ export function useWallet(isAuthenticated: boolean) {
 
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-      // Bootstrap UI with the last-known node state while the SDK connects.
+      // Bootstrap UI with the last-known node state for the *persisted* network only.
       try {
-        const cached = await AsyncStorage.getItem(ASYNC_KEYS.NODE_STATE_CACHE);
+        const persistedNet = await readPersistedNetwork();
+        if (session !== sessionRef.current) return;
+        const cached = await AsyncStorage.getItem(nodeStateCacheKey(persistedNet));
         if (cached && session === sessionRef.current) {
           const parsed = JSON.parse(cached) as Record<string, string | null>;
-          setState((prev) => ({
-            ...prev,
-            nodeState: {
-              identityPubkey: parsed.identityPubkey as string,
-              network: (parsed.network as NodeState['network']) ?? 'mainnet',
-              balanceSats: BigInt(parsed.balanceSats ?? '0'),
-              pendingReceiveSats: BigInt(parsed.pendingReceiveSats ?? '0'),
-              pendingSendSats: BigInt(parsed.pendingSendSats ?? '0'),
-              lastSyncedAt: parsed.lastSyncedAt ? Number(parsed.lastSyncedAt) : null,
-            },
-          }));
+          const cachedNetwork = (parsed.network as NodeState['network']) ?? 'testnet';
+          if (cachedNetwork === persistedNet) {
+            setState((prev) => ({
+              ...prev,
+              nodeState: {
+                identityPubkey: parsed.identityPubkey as string,
+                network: cachedNetwork,
+                balanceSats: BigInt(parsed.balanceSats ?? '0'),
+                pendingReceiveSats: BigInt(parsed.pendingReceiveSats ?? '0'),
+                pendingSendSats: BigInt(parsed.pendingSendSats ?? '0'),
+                inboundLiquiditySats: BigInt(parsed.inboundLiquiditySats ?? '0'),
+                outboundLiquiditySats: BigInt(parsed.outboundLiquiditySats ?? '0'),
+                lastSyncedAt: parsed.lastSyncedAt ? Number(parsed.lastSyncedAt) : null,
+              },
+            }));
+          }
         }
       } catch {
         // Stale cache read failure is non-fatal
@@ -159,9 +231,32 @@ export function useWallet(isAuthenticated: boolean) {
 
       setState((prev) => ({ ...prev, isConnected: true }));
 
+      async function pullTransactionsFromSdk() {
+        try {
+          const txs = await listTransactions();
+          if (session === sessionRef.current) {
+            setTransactions(txs);
+          }
+        } catch (err) {
+          logWalletOperation({ operation: 'listTransactions', error: err });
+        }
+      }
+
+      async function loadTransactions() {
+        try {
+          const txs = await listTransactions();
+          if (session !== sessionRef.current) return;
+          setTransactions(txs);
+          return txs;
+        } catch (err) {
+          logWalletOperation({ operation: 'loadTransactions', error: err });
+        }
+      }
+
       // Fetch full node state after successful connection.
       try {
         await refreshNodeState();
+        await loadTransactions();
       } catch (err) {
         logWalletOperation({ operation: 'initialNodeState', error: err });
       }
@@ -170,20 +265,36 @@ export function useWallet(isAuthenticated: boolean) {
 
       setState((prev) => ({ ...prev, isLoading: false }));
 
-      // Register SDK event listener.
+      /**
+       * FR-SDK-002 / channel-adjacent updates: Spark exposes no explicit ChannelOpen /
+       * ChannelClose event tags. We treat Synced, Optimization, and payment/deposit
+       * events as the signals to refresh balances, liquidity proxies, and history —
+       * the same data users need after channel capacity changes.
+       */
       const listener: EventListener = {
         async onEvent(event: SdkEvent) {
           switch (event.tag) {
             case SdkEvent_Tags.Synced:
               setState((prev) => ({ ...prev, isSynced: true }));
               await refreshNodeState(Date.now());
+              await pullTransactionsFromSdk();
               break;
             case SdkEvent_Tags.PaymentSucceeded:
+            case SdkEvent_Tags.ClaimedDeposits:
+              await refreshNodeState();
+              await pullTransactionsFromSdk();
+              onPaymentEventRef.current?.(event);
+              break;
             case SdkEvent_Tags.PaymentPending:
             case SdkEvent_Tags.PaymentFailed:
             case SdkEvent_Tags.UnclaimedDeposits:
-            case SdkEvent_Tags.ClaimedDeposits:
               await refreshNodeState();
+              await pullTransactionsFromSdk();
+              onPaymentEventRef.current?.(event);
+              break;
+            case SdkEvent_Tags.Optimization:
+              await refreshNodeState();
+              await pullTransactionsFromSdk();
               break;
             default:
               break;
@@ -214,6 +325,7 @@ export function useWallet(isAuthenticated: boolean) {
 
       // Signal disconnected to the UI synchronously before async teardown.
       setState(INITIAL_STATE);
+      setTransactions([]);
 
       const id = listenerIdRef.current;
       listenerIdRef.current = null;
@@ -236,11 +348,19 @@ export function useWallet(isAuthenticated: boolean) {
 
       cleanupPromiseRef.current = cleanup();
     };
-  }, [isAuthenticated, refreshBalance, refreshNodeState]);
+  }, [
+    isAuthenticated,
+    networkReconnectNonce,
+    appStateNonce,
+    refreshBalance,
+    refreshNodeState,
+  ]);
 
   return {
     ...state,
+    transactions,
     refreshBalance,
     refreshNodeState,
+    refreshTransactions,
   };
 }

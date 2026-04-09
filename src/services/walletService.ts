@@ -8,13 +8,16 @@ import {
   PaymentStatus,
   PaymentType,
   ListPaymentsRequest,
+  PaymentDetails_Tags,
   SdkError,
   type BreezSdkInterface,
   type EventListener,
   type GetInfoResponse,
   type Config,
+  type Payment,
   GetInfoRequest,
 } from '@breeztech/breez-sdk-spark-react-native';
+import type { Transaction } from '@/types/wallet';
 import { documentDirectory } from 'expo-file-system/legacy';
 import { getMnemonic, getPassphrase } from './secureStorageService';
 import { ASYNC_KEYS } from '@constants/storage';
@@ -49,10 +52,17 @@ export interface NodeState {
   balanceSats: bigint;
   pendingReceiveSats: bigint;
   pendingSendSats: bigint;
+  /** Best-effort inbound liquidity proxy until channel APIs exist (see Channel Management ticket). */
+  inboundLiquiditySats: bigint;
+  /** Spendable Lightning balance as effective outbound capacity in the Spark model. */
+  outboundLiquiditySats: bigint;
   /** Unix timestamp (ms) of the last Synced event, or null if not yet synced. */
   lastSyncedAt: number | null;
   network: 'mainnet' | 'testnet';
 }
+
+/** Network of the active SDK session (not the persisted settings toggle). Cleared on disconnect. */
+let connectedSessionNetwork: NodeState['network'] | null = null;
 
 // ─── Error Mapping ───────────────────────────────────────────────────────────
 
@@ -177,17 +187,16 @@ export function logWalletOperation(params: {
 
 /**
  * Reads the persisted network selection and maps it to a Breez SDK Network
- * value. Falls back to Mainnet for unknown or missing values.
+ * value. Falls back to testnet (Regtest) for unknown, missing, or read-failure cases.
  */
 async function resolveNetwork(): Promise<Network> {
   try {
     const stored = await AsyncStorage.getItem(ASYNC_KEYS.NETWORK_SELECTION);
-    if (stored === 'testnet') return Network.Regtest;
     if (stored === 'mainnet') return Network.Mainnet;
-    // Unknown or missing value — safe default
-    return Network.Mainnet;
+    if (stored === 'testnet') return Network.Regtest;
+    return Network.Regtest;
   } catch {
-    return Network.Mainnet;
+    return Network.Regtest;
   }
 }
 
@@ -237,10 +246,11 @@ export async function initializeWallet(): Promise<BreezSdkInterface> {
   const storageDir = `${docDir}breez-sdk`;
 
   sdkInstance = await connect({ config, seed, storageDir });
+  connectedSessionNetwork = network === Network.Regtest ? 'testnet' : 'mainnet';
 
   logWalletOperation({
     operation: 'initializeWallet',
-    context: { network: network === Network.Regtest ? 'testnet' : 'mainnet' },
+    context: { network: connectedSessionNetwork },
   });
 
   return sdkInstance;
@@ -258,6 +268,7 @@ export async function disconnectWallet(): Promise<void> {
       // Ignore disconnect errors during cleanup
     }
     sdkInstance = null;
+    connectedSessionNetwork = null;
   }
 }
 
@@ -305,12 +316,11 @@ export async function getNodeState(): Promise<Omit<NodeState, 'lastSyncedAt'>> {
     throw new Error('Wallet not initialized. Call initializeWallet() first.');
   }
 
-  const [info, pendingResponse, networkRaw] = await Promise.all([
+  const [info, pendingResponse] = await Promise.all([
     sdkInstance.getInfo(GetInfoRequest.create({ ensureSynced: undefined })),
     sdkInstance.listPayments(
       ListPaymentsRequest.create({ statusFilter: [PaymentStatus.Pending] }),
     ),
-    AsyncStorage.getItem(ASYNC_KEYS.NETWORK_SELECTION).catch(() => null),
   ]);
 
   let pendingReceiveSats = BigInt(0);
@@ -328,6 +338,68 @@ export async function getNodeState(): Promise<Omit<NodeState, 'lastSyncedAt'>> {
     balanceSats: info.balanceSats,
     pendingReceiveSats,
     pendingSendSats,
-    network: networkRaw === 'testnet' ? 'testnet' : 'mainnet',
+    inboundLiquiditySats: pendingReceiveSats,
+    outboundLiquiditySats: info.balanceSats,
+    network: connectedSessionNetwork ?? 'testnet',
   };
+}
+
+function mapPaymentStatus(status: PaymentStatus): Transaction['status'] {
+  switch (status) {
+    case PaymentStatus.Completed:
+      return 'completed';
+    case PaymentStatus.Pending:
+      return 'pending';
+    case PaymentStatus.Failed:
+      return 'failed';
+    default:
+      return 'pending';
+  }
+}
+
+function mapPaymentToTransaction(payment: Payment): Transaction {
+  const type: Transaction['type'] =
+    payment.paymentType === PaymentType.Receive ? 'received' : 'sent';
+
+  let description: string | undefined;
+  let bolt11: string | undefined;
+  const d = payment.details;
+  if (d) {
+    if (d.tag === PaymentDetails_Tags.Lightning) {
+      description = d.inner.description;
+      bolt11 = d.inner.invoice;
+    } else if (d.tag === PaymentDetails_Tags.Spark && d.inner.invoiceDetails) {
+      description = d.inner.invoiceDetails.description;
+      bolt11 = d.inner.invoiceDetails.invoice;
+    } else if (d.tag === PaymentDetails_Tags.Token && d.inner.invoiceDetails) {
+      description = d.inner.invoiceDetails.description;
+      bolt11 = d.inner.invoiceDetails.invoice;
+    }
+  }
+
+  return {
+    id: payment.id,
+    type,
+    status: mapPaymentStatus(payment.status),
+    amountSats: Number(payment.amount),
+    feeSats: Number(payment.fees),
+    timestamp: Number(payment.timestamp),
+    description,
+    bolt11,
+  };
+}
+
+/**
+ * Lists all payments from the SDK and maps them to app {@link Transaction} rows.
+ */
+export async function listTransactions(): Promise<Transaction[]> {
+  if (!sdkInstance) {
+    throw new Error('Wallet not initialized. Call initializeWallet() first.');
+  }
+  try {
+    const res = await sdkInstance.listPayments(ListPaymentsRequest.create({}));
+    return res.payments.map(mapPaymentToTransaction);
+  } catch (err) {
+    throw new Error(mapSdkError(err, 'list transactions'));
+  }
 }

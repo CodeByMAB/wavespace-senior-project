@@ -1,4 +1,13 @@
-import React, {createContext, useContext, useReducer, ReactNode} from 'react';
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  ReactNode,
+  useEffect,
+  useCallback,
+} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {ASYNC_KEYS} from '@constants/storage';
 import type {DisplayUnit, Network} from '@/types/wallet';
 
 interface SettingsState {
@@ -49,7 +58,46 @@ const SettingsContext = createContext<SettingsContextType | undefined>(
 );
 
 export function SettingsProvider({children}: {children: ReactNode}) {
-  const [state, dispatch] = useReducer(settingsReducer, initialSettings);
+  const [state, rawDispatch] = useReducer(settingsReducer, initialSettings);
+
+  const dispatch = useCallback((action: SettingsAction) => {
+    if (action.type === 'SET_NETWORK') {
+      AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, action.payload).catch(
+        () => {},
+      );
+    }
+    rawDispatch(action);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ASYNC_KEYS.NETWORK_SELECTION);
+        if (cancelled) return;
+        if (raw === null || raw === '') {
+          await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, 'testnet');
+          if (!cancelled) {
+            rawDispatch({type: 'SET_NETWORK', payload: 'testnet'});
+          }
+          return;
+        }
+        const network: Network = raw === 'mainnet' ? 'mainnet' : 'testnet';
+        rawDispatch({type: 'SET_NETWORK', payload: network});
+      } catch {
+        if (!cancelled) {
+          await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, 'testnet').catch(
+            () => {},
+          );
+          rawDispatch({type: 'SET_NETWORK', payload: 'testnet'});
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <SettingsContext.Provider value={{state, dispatch}}>
       {children}

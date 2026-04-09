@@ -1,5 +1,11 @@
 import React from 'react';
-import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import {useWallet} from '@context/WalletContext';
 import {useSettings} from '@context/SettingsContext';
@@ -7,7 +13,8 @@ import {colors, spacing, typography} from '@theme/index';
 import {formatAmount, satsToFiat} from '@utils/formatters';
 
 export function BalanceCard() {
-  const {state} = useWallet();
+  const {state, isLoading, sdkError} = useWallet();
+  const {isInitialized, isSyncing} = state;
   const {state: settings, dispatch: settingsDispatch} = useSettings();
 
   const toggleUnit = () => {
@@ -17,33 +24,58 @@ export function BalanceCard() {
     });
   };
 
+  const totalSats = state.balance.totalBalanceSats;
+
+  const networkDotColor =
+    sdkError || !isInitialized
+      ? colors.error
+      : isSyncing
+        ? colors.warning
+        : colors.success;
+
   return (
     <View style={styles.container}>
       <View style={styles.networkRow}>
         <View style={styles.networkBadge}>
-          <View style={styles.networkDot} />
+          <View style={[styles.networkDot, {backgroundColor: networkDotColor}]} />
           <Text style={styles.networkText}>
             {state.network === 'testnet' ? 'Testnet' : 'Mainnet'}
           </Text>
         </View>
       </View>
 
-      <TouchableOpacity onPress={toggleUnit} activeOpacity={0.7}>
-        <Text style={styles.balance}>
-          {settings.hideBalance
-            ? '••••••'
-            : formatAmount(
-                state.balance.lightningBalanceSats,
-                settings.displayUnit,
-              )}
-        </Text>
-      </TouchableOpacity>
+      {sdkError ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={18} color={colors.error} />
+          <Text style={styles.errorBannerText}>{sdkError}</Text>
+        </View>
+      ) : null}
 
-      <Text style={styles.fiat}>
-        {settings.hideBalance
-          ? '••••'
-          : `${satsToFiat(state.balance.lightningBalanceSats)}`}
-      </Text>
+      {isLoading ? (
+        <View style={styles.loadingHint}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.loadingLabel}>Connecting…</Text>
+        </View>
+      ) : isSyncing ? (
+        <View style={styles.loadingHint}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.loadingLabel}>Syncing…</Text>
+        </View>
+      ) : null}
+
+      <View style={styles.balanceBlock}>
+        <TouchableOpacity onPress={toggleUnit} activeOpacity={0.7}>
+          <Text style={styles.balance}>
+            {settings.hideBalance
+              ? '••••••'
+              : formatAmount(totalSats, settings.displayUnit)}
+          </Text>
+        </TouchableOpacity>
+
+        <Text style={styles.fiat}>
+          {settings.hideBalance ? '••••' : `${satsToFiat(totalSats)}`}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -71,7 +103,6 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.primary,
   },
   networkText: {
     fontSize: 12,
@@ -90,5 +121,37 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: colors.textTertiary,
     marginTop: spacing.sm,
+  },
+  balanceBlock: {
+    alignItems: 'center',
+    minHeight: 120,
+    justifyContent: 'center',
+  },
+  loadingHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  loadingLabel: {
+    ...typography.bodyMedium,
+    color: colors.textTertiary,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    alignSelf: 'stretch',
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+  },
+  errorBannerText: {
+    flex: 1,
+    ...typography.bodySmall,
+    color: colors.textSecondary,
   },
 });
