@@ -7,7 +7,11 @@ import {formatSats} from '@utils/formatters';
 export function LiquidityBar() {
   const {state} = useWallet();
   const {inboundLiquiditySats, outboundLiquiditySats} = state.balance;
-  const activeChannels = state.channels.filter(c => c.state === 'active').length;
+  const connectionStatus = !state.isInitialized
+    ? 'Offline'
+    : state.isSyncing
+      ? 'Syncing'
+      : 'Connected';
   const totalLiquidity = inboundLiquiditySats + outboundLiquiditySats;
   const inboundPct =
     totalLiquidity > 0 ? inboundLiquiditySats / totalLiquidity : 0.5;
@@ -28,8 +32,8 @@ export function LiquidityBar() {
         </View>
         <View style={styles.separator} />
         <View style={styles.item}>
-          <Text style={styles.value}>{activeChannels}</Text>
-          <Text style={styles.label}>Channels</Text>
+          <Text style={styles.value}>{connectionStatus}</Text>
+          <Text style={styles.label}>Status</Text>
         </View>
       </View>
       <View style={styles.barTrack}>

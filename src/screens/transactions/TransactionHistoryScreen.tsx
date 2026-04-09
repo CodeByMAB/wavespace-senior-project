@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, {useState, useMemo, useCallback, useEffect} from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   SectionList,
   TouchableOpacity,
   StyleSheet,
+  RefreshControl,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
@@ -24,25 +25,67 @@ type Nav = NativeStackNavigationProp<
   'TransactionHistory'
 >;
 
-type Filter = 'all' | 'sent' | 'received' | 'pending' | 'failed';
+type Filter = 'all' | 'lightning' | 'withdrawals' | 'pending';
+const PAGE_SIZE = 50;
 
 const FILTERS: {key: Filter; label: string}[] = [
   {key: 'all', label: 'All'},
-  {key: 'sent', label: 'Sent'},
-  {key: 'received', label: 'Received'},
+  {key: 'lightning', label: 'Lightning'},
+  {key: 'withdrawals', label: 'Withdrawals'},
   {key: 'pending', label: 'Pending'},
-  {key: 'failed', label: 'Failed'},
 ];
 
 export function TransactionHistoryScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const {state} = useWallet();
+  const {refreshTransactions, fetchTransactionPage} = useWallet();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>('0');
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const loadPage = useCallback(
+    async (params: {reset: boolean; cursor?: string | null}) => {
+      setLoadingMore(true);
+      try {
+        const page = await fetchTransactionPage({
+          cursor: params.cursor ?? null,
+          limit: PAGE_SIZE,
+        });
+        setTransactions(prev =>
+          params.reset ? page.transactions : [...prev, ...page.transactions],
+        );
+        setNextCursor(page.nextCursor);
+      } finally {
+        setLoadingMore(false);
+      }
+    },
+    [fetchTransactionPage],
+  );
+
+  useEffect(() => {
+    loadPage({reset: true, cursor: null});
+  }, [loadPage]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshTransactions();
+      await loadPage({reset: true, cursor: null});
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleEndReached = useCallback(() => {
+    if (refreshing || loadingMore || !nextCursor) return;
+    loadPage({reset: false, cursor: nextCursor});
+  }, [loadPage, loadingMore, nextCursor, refreshing]);
 
   const filteredSections = useMemo(() => {
-    let txs = state.transactions;
+    let txs = transactions;
 
     if (search) {
       const q = search.toLowerCase();
@@ -55,10 +98,18 @@ export function TransactionHistoryScreen() {
 
     if (filter !== 'all') {
       txs = txs.filter(tx => {
-        if (filter === 'sent') return tx.type === 'sent' || tx.type === 'pending_send';
-        if (filter === 'received') return tx.type === 'received' || tx.type === 'pending_receive';
+        if (filter === 'lightning') {
+          return (
+            tx.type === 'sent' ||
+            tx.type === 'pending_send' ||
+            tx.type === 'received' ||
+            tx.type === 'pending_receive'
+          );
+        }
+        if (filter === 'withdrawals') {
+          return tx.type === 'withdrawal' || tx.type === 'pending_withdrawal';
+        }
         if (filter === 'pending') return tx.status === 'pending';
-        if (filter === 'failed') return tx.status === 'failed';
         return true;
       });
     }
@@ -71,7 +122,7 @@ export function TransactionHistoryScreen() {
     });
 
     return Object.entries(groups).map(([title, data]) => ({title, data}));
-  }, [state.transactions, search, filter]);
+  }, [transactions, search, filter]);
 
   return (
     <View style={[styles.container, {paddingTop: insets.top}]}>
@@ -133,8 +184,20 @@ export function TransactionHistoryScreen() {
           />
         }
         contentContainerStyle={{paddingBottom: insets.bottom + 20}}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
         stickySectionHeadersEnabled={false}
         showsVerticalScrollIndicator={false}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.4}
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.footerLoading}>
+              <Text style={styles.footerLoadingText}>Loading more transactions...</Text>
+            </View>
+          ) : null
+        }
       />
     </View>
   );
@@ -210,5 +273,13 @@ const styles = StyleSheet.create({
   },
   itemPadding: {
     paddingHorizontal: spacing.xl,
+  },
+  footerLoading: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+  },
+  footerLoadingText: {
+    fontSize: 12,
+    color: colors.textTertiary,
   },
 });

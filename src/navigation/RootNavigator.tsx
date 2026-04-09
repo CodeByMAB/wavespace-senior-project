@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, AppState, type AppStateStatus } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ASYNC_KEYS } from '@constants/storage';
 import { useAuthContext } from '@context/AuthContext';
+import { useSettings } from '@context/SettingsContext';
 import { OnboardingGateProvider } from '@context/OnboardingGateContext';
 import { disconnectWallet } from '@services/walletService';
 import { colors } from '@theme/colors';
@@ -22,8 +23,10 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function RootNavigator() {
   const [isLoading, setIsLoading] = useState(true);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated, logout } = useAuthContext();
+  const { state: settings } = useSettings();
   const prevAuthRef = useRef(isAuthenticated);
+  const backgroundAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(ASYNC_KEYS.ONBOARDING_COMPLETED)
@@ -37,6 +40,25 @@ export default function RootNavigator() {
     }
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') {
+        const bg = backgroundAtRef.current;
+        backgroundAtRef.current = null;
+        if (
+          bg != null &&
+          settings.autoLockTimeout > 0 &&
+          Date.now() - bg >= settings.autoLockTimeout * 1000
+        ) {
+          logout();
+        }
+      } else if (next === 'background' || next === 'inactive') {
+        backgroundAtRef.current = Date.now();
+      }
+    });
+    return () => sub.remove();
+  }, [settings.autoLockTimeout, logout]);
 
   const markOnboardingComplete = useCallback(() => {
     setOnboardingComplete(true);

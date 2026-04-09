@@ -1,11 +1,17 @@
 // --- Display / unit types ---
-export type DisplayUnit = 'sats' | 'btc';
+export type DisplayUnit = 'sats' | 'btc' | 'both';
 export type Network = 'testnet' | 'mainnet';
 export type FeeRate = 'slow' | 'medium' | 'fast';
 export type FeeSpeed = 'low' | 'medium' | 'high';
 
 // --- Transaction types ---
-export type TransactionType = 'sent' | 'received' | 'pending_send' | 'pending_receive';
+export type TransactionType =
+  | 'sent'
+  | 'received'
+  | 'pending_send'
+  | 'pending_receive'
+  | 'withdrawal'
+  | 'pending_withdrawal';
 export type TransactionStatus = 'completed' | 'pending' | 'failed' | 'expired';
 
 export interface Transaction {
@@ -20,10 +26,18 @@ export interface Transaction {
   preimage?: string;
   destination?: string;
   bolt11?: string;
+  txid?: string;
+  confirmations?: number;
+  confirmationTarget?: 0 | 1 | 6;
 }
 
 // --- Channel types ---
-export type ChannelState = 'active' | 'inactive' | 'pending_open' | 'pending_close';
+export type ChannelState =
+  | 'active'
+  | 'inactive'
+  | 'pending_open'
+  | 'pending_close'
+  | 'closed';
 
 export interface Channel {
   id: string;
@@ -35,7 +49,29 @@ export interface Channel {
   state: ChannelState;
   isUsable: boolean;
   shortChannelId?: string;
+  /** BOLT-style funding outpoint `txid:vout` when known. */
+  channelPoint?: string;
+  /** On-chain funding transaction id when known. */
+  fundingTxid?: string;
+  /** When the channel was first opened / became usable (epoch ms), if known. */
+  openedAtMs?: number;
+  /** Total completed outbound Lightning volume for this channel (sats), when tracked. */
+  totalSentSats?: number;
+  /** Total completed inbound Lightning volume for this channel (sats), when tracked. */
+  totalReceivedSats?: number;
 }
+
+/** UI state while monitoring inbound liquidity / optimization after confirming a receive invoice. */
+export type ReceiveChannelOpeningState =
+  | { status: 'idle' }
+  | {
+      status: 'opening';
+      message: string;
+      currentRound: number;
+      totalRounds: number;
+      isOptimizing: boolean;
+    }
+  | { status: 'failed'; message: string };
 
 // --- Balance ---
 export interface WalletBalance {

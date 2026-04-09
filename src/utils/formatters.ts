@@ -1,5 +1,5 @@
 import type {DisplayUnit} from '@/types/wallet';
-import {MOCK_BTC_PRICE_USD} from '@data/mockWallet';
+import {getCachedBtcPriceUsd} from '@services/priceService';
 
 export function satsToBtc(sats: number): number {
   return sats / 100_000_000;
@@ -21,11 +21,14 @@ export function formatAmount(sats: number, unit: DisplayUnit): string {
   if (unit === 'btc') {
     return `${formatBtc(sats)} BTC`;
   }
+  if (unit === 'both') {
+    return `${formatSats(sats)} sats (${formatBtc(sats)} BTC)`;
+  }
   return `${formatSats(sats)} sats`;
 }
 
 export function satsToFiat(sats: number): string {
-  const usd = satsToBtc(Math.abs(sats)) * MOCK_BTC_PRICE_USD;
+  const usd = satsToBtc(Math.abs(sats)) * getCachedBtcPriceUsd();
   return `$${usd.toFixed(2)}`;
 }
 

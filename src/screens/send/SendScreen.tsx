@@ -18,7 +18,7 @@ import {BottomSheet} from '@components/common/BottomSheet';
 import {useWallet} from '@context/WalletContext';
 import {useSettings} from '@context/SettingsContext';
 import {colors, spacing, typography, borderRadius} from '@theme/index';
-import {formatSats, satsToFiat} from '@utils/formatters';
+import {formatAmount, satsToFiat} from '@utils/formatters';
 import type {HomeStackParamList} from '@/types/navigation';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Send'>;
@@ -50,6 +50,9 @@ export function SendScreen() {
       Alert.alert('Payment Sent', 'Your Lightning payment was successful.', [
         {text: 'OK', onPress: () => navigation.goBack()},
       ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to send payment. Please try again.';
+      Alert.alert('Payment Failed', message);
     } finally {
       setLoading(false);
     }
@@ -131,12 +134,14 @@ export function SendScreen() {
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Estimated Fee</Text>
-            <Text style={styles.detailValue}>~{formatSats(estimatedFee)} sats</Text>
+            <Text style={styles.detailValue}>
+              ~{formatAmount(estimatedFee, settings.displayUnit)}
+            </Text>
           </View>
           <View style={[styles.detailRow, {borderBottomWidth: 0}]}>
             <Text style={styles.detailLabel}>Total</Text>
             <Text style={[styles.detailValue, {fontWeight: '700'}]}>
-              {formatSats(amountSats + estimatedFee)} sats
+              {formatAmount(amountSats + estimatedFee, settings.displayUnit)}
             </Text>
           </View>
         </Card>
@@ -161,16 +166,20 @@ export function SendScreen() {
         <Text style={styles.sheetTitle}>Confirm Payment</Text>
         <View style={styles.sheetDetail}>
           <Text style={styles.detailLabel}>Amount</Text>
-          <Text style={styles.detailValue}>{formatSats(amountSats)} sats</Text>
+          <Text style={styles.detailValue}>
+            {formatAmount(amountSats, settings.displayUnit)}
+          </Text>
         </View>
         <View style={styles.sheetDetail}>
           <Text style={styles.detailLabel}>Fee</Text>
-          <Text style={styles.detailValue}>~{formatSats(estimatedFee)} sats</Text>
+          <Text style={styles.detailValue}>
+            ~{formatAmount(estimatedFee, settings.displayUnit)}
+          </Text>
         </View>
         <View style={styles.sheetDetail}>
           <Text style={styles.detailLabel}>Total</Text>
           <Text style={[styles.detailValue, {color: colors.primary}]}>
-            {formatSats(amountSats + estimatedFee)} sats
+            {formatAmount(amountSats + estimatedFee, settings.displayUnit)}
           </Text>
         </View>
         <View style={{gap: spacing.sm, marginTop: spacing.lg}}>

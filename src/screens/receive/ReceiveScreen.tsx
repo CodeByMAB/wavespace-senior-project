@@ -1,5 +1,5 @@
-import React, {useState, useEffect} from 'react';
-import {View, Text, TextInput, ScrollView, Share, StyleSheet} from 'react-native';
+import React, {useState, useEffect, useRef} from 'react';
+import {View, Text, TextInput, ScrollView, Share, StyleSheet, Alert} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
@@ -7,20 +7,33 @@ import QRCode from 'react-native-qrcode-svg';
 import {Header} from '@components/common/Header';
 import {Button} from '@components/common/Button';
 import {Card} from '@components/common/Card';
+import {ProgressBar} from '@components/common/ProgressBar';
 import {useWallet} from '@context/WalletContext';
+import {useSettings} from '@context/SettingsContext';
 import {colors, spacing, typography, borderRadius} from '@theme/index';
-import {satsToFiat} from '@utils/formatters';
+import {formatAmount, satsToFiat} from '@utils/formatters';
 
 export function ReceiveScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const {createInvoice} = useWallet();
+  const {
+    createInvoice,
+    receiveChannelOpening,
+    startReceiveChannelOpeningMonitor,
+    stopReceiveChannelOpeningMonitor,
+  } = useWallet();
+  const {state: settings} = useSettings();
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
   const [invoice, setInvoice] = useState('');
+  const [pendingInvoice, setPendingInvoice] = useState<{
+    paymentRequest: string;
+    feeSats: number;
+  } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [expirySeconds, setExpirySeconds] = useState(0);
   const [copied, setCopied] = useState(false);
+  const openingFailAlertShown = useRef(false);
 
   const amountSats = parseInt(amount || '0', 10);
 
@@ -32,15 +45,67 @@ export function ReceiveScreen() {
     return () => clearInterval(timer);
   }, [expirySeconds]);
 
+  useEffect(() => {
+    if (receiveChannelOpening.status !== 'failed') {
+      openingFailAlertShown.current = false;
+      return;
+    }
+    if (openingFailAlertShown.current) return;
+    openingFailAlertShown.current = true;
+    Alert.alert('Opening issue', receiveChannelOpening.message, [
+      {
+        text: 'Retry',
+        onPress: () => {
+          stopReceiveChannelOpeningMonitor();
+          setInvoice('');
+          setPendingInvoice(null);
+          setExpirySeconds(0);
+        },
+      },
+      {
+        text: 'OK',
+        style: 'cancel',
+        onPress: () => stopReceiveChannelOpeningMonitor(),
+      },
+    ]);
+  }, [receiveChannelOpening, stopReceiveChannelOpeningMonitor]);
+
+  useEffect(() => {
+    return () => stopReceiveChannelOpeningMonitor();
+  }, [stopReceiveChannelOpeningMonitor]);
+
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const inv = await createInvoice(amountSats, memo || undefined);
-      setInvoice(inv);
-      setExpirySeconds(600);
+      const res = await createInvoice(amountSats, memo || undefined);
+      if (!res.paymentRequest?.trim()) {
+        throw new Error('Could not create a valid invoice. Please try again.');
+      }
+      setPendingInvoice({
+        paymentRequest: res.paymentRequest.trim(),
+        feeSats: res.feeSats,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to generate invoice. Please try again.';
+      Alert.alert('Invoice Failed', message, [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'Retry', onPress: () => void handleGenerate()},
+      ]);
     } finally {
       setGenerating(false);
     }
+  };
+
+  const confirmPendingInvoice = () => {
+    if (!pendingInvoice) return;
+    setInvoice(pendingInvoice.paymentRequest);
+    setPendingInvoice(null);
+    setExpirySeconds(600);
+    startReceiveChannelOpeningMonitor();
+  };
+
+  const cancelPendingInvoice = () => {
+    setPendingInvoice(null);
   };
 
   const handleCopy = async () => {
@@ -66,7 +131,7 @@ export function ReceiveScreen() {
           {paddingBottom: insets.bottom + spacing.xl},
         ]}
         keyboardShouldPersistTaps="handled">
-        {!invoice ? (
+        {!invoice && !pendingInvoice ? (
           <>
             <View>
               <Text style={styles.label}>AMOUNT (OPTIONAL)</Text>
@@ -99,6 +164,25 @@ export function ReceiveScreen() {
               onPress={handleGenerate}
               loading={generating}
               icon="flash-outline"
+            />
+          </>
+        ) : pendingInvoice ? (
+          <>
+            <Card style={styles.qrCard}>
+              <Text style={styles.feeTitle}>LSP service fee</Text>
+              <Text style={styles.feeAmount}>
+                {formatAmount(pendingInvoice.feeSats, settings.displayUnit)}
+              </Text>
+              <Text style={styles.feeBody}>
+                Your liquidity provider may charge this fee to receive this payment and
+                prepare inbound capacity. Confirm to show your invoice and QR code.
+              </Text>
+            </Card>
+            <Button title="Confirm and show invoice" onPress={confirmPendingInvoice} icon="checkmark" />
+            <Button
+              title="Cancel"
+              variant="outline"
+              onPress={cancelPendingInvoice}
             />
           </>
         ) : (
@@ -144,10 +228,35 @@ export function ReceiveScreen() {
               </Text>
             </Card>
 
+            {receiveChannelOpening.status === 'opening' && (
+              <Card variant="outline" padding="md">
+                <Text style={styles.openingTitle}>Channel opening</Text>
+                <Text style={styles.openingMessage}>{receiveChannelOpening.message}</Text>
+                {receiveChannelOpening.totalRounds > 0 ? (
+                  <View style={styles.openingBar}>
+                    <ProgressBar
+                      progress={
+                        receiveChannelOpening.currentRound /
+                        Math.max(1, receiveChannelOpening.totalRounds)
+                      }
+                      color={colors.primary}
+                      backgroundColor={colors.border}
+                      height={6}
+                    />
+                    <Text style={styles.openingRounds}>
+                      Step {receiveChannelOpening.currentRound} of{' '}
+                      {receiveChannelOpening.totalRounds}
+                    </Text>
+                  </View>
+                ) : null}
+              </Card>
+            )}
+
             <Button
               title="Create New Invoice"
               variant="outline"
               onPress={() => {
+                stopReceiveChannelOpeningMonitor();
                 setInvoice('');
                 setExpirySeconds(0);
               }}
@@ -224,5 +333,37 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.info,
     lineHeight: 18,
+  },
+  feeTitle: {
+    ...typography.label,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  feeAmount: {
+    ...typography.h2,
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+  feeBody: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  openingTitle: {
+    ...typography.label,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  openingMessage: {
+    ...typography.bodySmall,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  openingBar: {
+    gap: spacing.sm,
+  },
+  openingRounds: {
+    ...typography.bodySmall,
+    color: colors.textTertiary,
   },
 });

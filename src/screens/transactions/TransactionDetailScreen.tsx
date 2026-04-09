@@ -1,14 +1,31 @@
 import React from 'react';
-import {View, Text, ScrollView, StyleSheet} from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  Share,
+  Linking,
+} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
 import {Header} from '@components/common/Header';
 import {CopyableText} from '@components/common/CopyableText';
 import {colors, spacing} from '@theme/index';
-import {formatSats, satsToFiat, truncateMiddle, formatTimestamp, formatTime} from '@utils/formatters';
+import {
+  formatAmount,
+  formatSats,
+  satsToFiat,
+  truncateMiddle,
+  formatTimestamp,
+  formatTime,
+} from '@utils/formatters';
 import type {HomeStackParamList} from '@/types/navigation';
 import type {Transaction} from '@/types/wallet';
+import {useWallet} from '@context/WalletContext';
+import {useSettings} from '@context/SettingsContext';
 
 type Route = RouteProp<HomeStackParamList, 'TransactionDetail'>;
 
@@ -29,14 +46,52 @@ export function TransactionDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute<Route>();
   const insets = useSafeAreaInsets();
+  const {state} = useWallet();
+  const {state: settings} = useSettings();
   const {transaction: tx} = route.params;
 
-  const isSent = tx.type === 'sent' || tx.type === 'pending_send';
+  const isWithdrawal = tx.type === 'withdrawal' || tx.type === 'pending_withdrawal';
+  const isSent =
+    tx.type === 'sent' ||
+    tx.type === 'pending_send' ||
+    tx.type === 'withdrawal' ||
+    tx.type === 'pending_withdrawal';
   const statusColor = getStatusColor(tx.status);
+  const explorerBaseUrl =
+    state.network === 'mainnet'
+      ? 'https://mempool.space/tx/'
+      : 'https://mempool.space/testnet/tx/';
+
+  const shareTransaction = async () => {
+    const amountLine = `${isSent ? '-' : '+'}${formatAmount(tx.amountSats, settings.displayUnit)}`;
+    const feeLine =
+      tx.feeSats > 0
+        ? formatAmount(tx.feeSats, settings.displayUnit)
+        : 'None';
+    const lines = [
+      `Type: ${isWithdrawal ? 'Withdrawal' : isSent ? 'Sent' : 'Received'}`,
+      `Status: ${tx.status}`,
+      `Amount: ${amountLine}`,
+      `Fiat: ${satsToFiat(tx.amountSats)}`,
+      `Date: ${formatTimestamp(tx.timestamp)} at ${formatTime(tx.timestamp)}`,
+      `Fee: ${feeLine}`,
+      tx.description ? `Description: ${tx.description}` : null,
+      isWithdrawal && tx.destination ? `Destination: ${tx.destination}` : null,
+      tx.txid ? `TxID: ${tx.txid}` : null,
+      tx.bolt11 ? `Invoice: ${tx.bolt11}` : null,
+    ].filter(Boolean);
+
+    await Share.share({ message: lines.join('\n') });
+  };
+
+  const openExplorer = async () => {
+    if (!tx.txid) return;
+    await Linking.openURL(`${explorerBaseUrl}${tx.txid}`);
+  };
 
   return (
     <View style={styles.container}>
-      <Header title="" onBack={() => navigation.goBack()} />
+      <Header title="" onBack={() => navigation.goBack()} rightAction={{icon: 'share-outline', onPress: shareTransaction}} />
 
       <ScrollView
         contentContainerStyle={[
@@ -56,9 +111,13 @@ export function TransactionDetailScreen() {
 
           <Text style={styles.amount}>
             {isSent ? '-' : '+'}
-            {formatSats(tx.amountSats)}
+            {settings.displayUnit === 'sats'
+              ? formatSats(tx.amountSats)
+              : formatAmount(tx.amountSats, settings.displayUnit)}
           </Text>
-          <Text style={styles.amountUnit}>sats</Text>
+          {settings.displayUnit === 'sats' ? (
+            <Text style={styles.amountUnit}>sats</Text>
+          ) : null}
           <Text style={styles.fiat}>{satsToFiat(tx.amountSats)}</Text>
 
           <View style={[styles.statusPill, {borderColor: statusColor}]}>
@@ -71,22 +130,41 @@ export function TransactionDetailScreen() {
 
         {/* Detail rows */}
         <View style={styles.detailsSection}>
-          <DetailRow label="Type" value={isSent ? 'Sent' : 'Received'} />
+          <DetailRow label="Type" value={isWithdrawal ? 'Withdrawal' : isSent ? 'Sent' : 'Received'} />
           <DetailRow
             label="Date"
             value={`${formatTimestamp(tx.timestamp)} at ${formatTime(tx.timestamp)}`}
           />
           <DetailRow
             label="Fee"
-            value={tx.feeSats > 0 ? `${formatSats(tx.feeSats)} sats` : 'None'}
+            value={
+              tx.feeSats > 0
+                ? formatAmount(tx.feeSats, settings.displayUnit)
+                : 'None'
+            }
           />
           {tx.description && (
             <DetailRow label="Description" value={tx.description} />
           )}
-          {tx.destination && (
+          {!isWithdrawal && tx.destination && (
             <DetailRow
               label="Destination"
               value={truncateMiddle(tx.destination)}
+            />
+          )}
+          {isWithdrawal && tx.destination && (
+            <DetailRow
+              label="Destination Address"
+              value={truncateMiddle(tx.destination)}
+            />
+          )}
+          {isWithdrawal && tx.txid && (
+            <DetailRow label="Transaction ID" value={truncateMiddle(tx.txid)} />
+          )}
+          {isWithdrawal && (
+            <DetailRow
+              label="Confirmations"
+              value={`${tx.confirmations ?? 0}/${tx.confirmationTarget ?? 6}`}
             />
           )}
         </View>
@@ -107,6 +185,35 @@ export function TransactionDetailScreen() {
             displayText={truncateMiddle(tx.preimage, 12, 12)}
           />
         )}
+
+        {isWithdrawal && tx.destination && (
+          <CopyableText
+            label="DESTINATION ADDRESS"
+            text={tx.destination}
+            displayText={truncateMiddle(tx.destination, 12, 12)}
+          />
+        )}
+
+        {isWithdrawal && tx.txid && (
+          <CopyableText
+            label="TRANSACTION ID"
+            text={tx.txid}
+            displayText={truncateMiddle(tx.txid, 12, 12)}
+          />
+        )}
+
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.actionButton} onPress={shareTransaction}>
+            <Ionicons name="share-outline" size={18} color={colors.textPrimary} />
+            <Text style={styles.actionText}>Share</Text>
+          </TouchableOpacity>
+          {isWithdrawal && tx.txid ? (
+            <TouchableOpacity style={styles.actionButton} onPress={openExplorer}>
+              <Ionicons name="open-outline" size={18} color={colors.textPrimary} />
+              <Text style={styles.actionText}>View on Explorer</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </ScrollView>
     </View>
   );
@@ -205,5 +312,24 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: spacing.lg,
+  },
+  actionsRow: {
+    gap: spacing.md,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  actionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textPrimary,
   },
 });

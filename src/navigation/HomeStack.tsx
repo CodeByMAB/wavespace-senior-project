@@ -7,16 +7,18 @@ import { ReceiveScreen } from '@screens/receive/ReceiveScreen';
 import { WithdrawScreen } from '@screens/withdraw/WithdrawScreen';
 import { QRScannerScreen } from '@screens/scanner/QRScannerScreen';
 import { ChannelListScreen } from '@screens/channels/ChannelListScreen';
+import { ChannelDetailScreen } from '@screens/channels/ChannelDetailScreen';
 import { TransactionDetailScreen } from '@screens/transactions/TransactionDetailScreen';
-import type { Transaction } from '@/types/wallet';
+import type { Channel, Transaction } from '@/types/wallet';
 
 export type HomeStackParamList = {
   Dashboard: undefined;
   Send: { prefillInvoice?: string } | undefined;
   Receive: undefined;
-  Withdraw: undefined;
+  Withdraw: { scannedAddress?: string; scannedPayload?: string } | undefined;
   QRScanner: { returnScreen: 'Send' | 'Withdraw' };
   ChannelList: undefined;
+  ChannelDetail: { channel: Channel };
   TransactionDetail: { transaction: Transaction };
 };
 
@@ -35,6 +37,7 @@ export function HomeStack() {
       <Stack.Screen name="Withdraw" component={WithdrawScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="QRScanner" component={QRScannerScreen} options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="ChannelList" component={ChannelListScreen} />
+      <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
     </Stack.Navigator>
   );

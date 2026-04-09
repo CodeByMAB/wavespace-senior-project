@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {useWallet} from '@context/WalletContext';
 import {useSettings} from '@context/SettingsContext';
 import {colors, spacing, typography} from '@theme/index';
 import {formatAmount, satsToFiat} from '@utils/formatters';
+import {getBtcPriceUsd} from '@services/priceService';
 
 export function BalanceCard() {
   const {state, isLoading, sdkError} = useWallet();
@@ -18,9 +19,12 @@ export function BalanceCard() {
   const {state: settings, dispatch: settingsDispatch} = useSettings();
 
   const toggleUnit = () => {
+    const cycle: Array<'sats' | 'btc' | 'both'> = ['sats', 'btc', 'both'];
+    const i = cycle.indexOf(settings.displayUnit);
+    const next = cycle[(i + 1) % cycle.length]!;
     settingsDispatch({
       type: 'SET_DISPLAY_UNIT',
-      payload: settings.displayUnit === 'sats' ? 'btc' : 'sats',
+      payload: next,
     });
   };
 
@@ -32,6 +36,10 @@ export function BalanceCard() {
       : isSyncing
         ? colors.warning
         : colors.success;
+
+  useEffect(() => {
+    getBtcPriceUsd().catch(() => {});
+  }, []);
 
   return (
     <View style={styles.container}>

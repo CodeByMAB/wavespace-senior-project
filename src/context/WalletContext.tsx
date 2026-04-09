@@ -20,10 +20,24 @@ import type {
   Channel,
   DisplayUnit,
   Network,
+  ReceiveChannelOpeningState,
 } from '@/types/wallet';
 import { useAuthContext } from '@context/AuthContext';
+import { useSettings } from '@context/SettingsContext';
 import { useWallet as useWalletSdk } from '@hooks/useWallet';
-import { disconnectWallet, type NodeState } from '@services/walletService';
+import { formatAmount } from '@utils/formatters';
+import {
+  createLightningInvoice,
+  disconnectWallet,
+  estimateWithdrawalFee as estimateWithdrawalFeeService,
+  executeWithdrawal,
+  mapPaymentToTransaction,
+  sendLightningPayment,
+  validateWithdrawalAddress as validateWithdrawalAddressService,
+  type TransactionPage,
+  type NodeState,
+  type LightningInvoiceResult,
+} from '@services/walletService';
 
 type WalletAction =
   | { type: 'SET_INITIALIZED'; payload: boolean }
@@ -95,6 +109,9 @@ function mergeSdkIntoWalletState(
     isLoading: boolean;
     nodeState: NodeState | null;
     transactions: Transaction[];
+    channels: Channel[];
+    /** When true, SDK channel fetch has completed at least once; empty arrays are authoritative. */
+    channelsHydrated: boolean;
   }
 ): WalletState {
   const ns = sdk.nodeState;
@@ -130,10 +147,13 @@ function mergeSdkIntoWalletState(
   const transactions =
     sdk.transactions.length > 0 ? sdk.transactions : base.transactions;
 
+  const channels = sdk.channelsHydrated ? sdk.channels : base.channels;
+
   return {
     ...base,
     balance,
     transactions,
+    channels,
     isInitialized: sdk.isConnected,
     isSyncing,
     nodeId: ns?.identityPubkey ?? base.nodeId,
@@ -147,23 +167,34 @@ interface WalletContextType {
   dispatch: React.Dispatch<WalletAction>;
   isLoading: boolean;
   sdkError: string | null;
+  receiveChannelOpening: ReceiveChannelOpeningState;
+  startReceiveChannelOpeningMonitor: () => void;
+  stopReceiveChannelOpeningMonitor: () => void;
   /** Tears down the SDK, then reconnects so the next session uses the persisted network (e.g. after settings). */
   reconnectAfterNetworkChange: () => Promise<void>;
   sendPayment: (invoice: string, amountSats: number) => Promise<void>;
-  createInvoice: (amountSats: number, description?: string) => Promise<string>;
-  withdrawOnchain: (address: string, amountSats: number, feeRate: number) => Promise<void>;
+  createInvoice: (amountSats: number, description?: string) => Promise<LightningInvoiceResult>;
+  withdrawOnchain: (address: string, amountSats: number, feeRate: number) => Promise<string>;
+  estimateWithdrawalFee: (
+    address: string,
+    amountSats: number,
+    satPerVbyte: number
+  ) => Promise<number>;
+  validateWithdrawalAddress: (address: string) => Promise<boolean>;
+  refreshTransactions: () => Promise<void>;
+  refreshNodeState: () => Promise<void>;
+  refreshChannels: () => Promise<void>;
+  fetchTransactionPage: (params?: {
+    cursor?: string | null;
+    limit?: number;
+  }) => Promise<TransactionPage>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
-function formatSats(amount: bigint): string {
-  const n = Number(amount);
-  if (!Number.isFinite(n)) return String(amount);
-  return `${n.toLocaleString()} sats`;
-}
-
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuthContext();
+  const { state: settings } = useSettings();
   const [networkReconnectNonce, setNetworkReconnectNonce] = useState(0);
 
   const onPaymentEvent = useCallback((event: SdkEvent) => {
@@ -171,25 +202,33 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       case SdkEvent_Tags.PaymentSucceeded: {
         const p = event.inner.payment;
         const isReceive = p.paymentType === PaymentType.Receive;
+        const amt = Number(p.amount);
+        const amtLabel = Number.isFinite(amt)
+          ? formatAmount(amt, settings.displayUnit)
+          : String(p.amount);
         Alert.alert(
           isReceive ? 'Payment received' : 'Payment sent',
-          `${formatSats(p.amount)} ${isReceive ? 'received' : 'sent'} successfully.`,
+          `${amtLabel} ${isReceive ? 'received' : 'sent'} successfully.`,
         );
         break;
       }
       case SdkEvent_Tags.PaymentFailed: {
         const p = event.inner.payment;
         const isReceive = p.paymentType === PaymentType.Receive;
+        const amt = Number(p.amount);
+        const amtLabel = Number.isFinite(amt)
+          ? formatAmount(amt, settings.displayUnit)
+          : String(p.amount);
         Alert.alert(
           'Payment failed',
-          `Could not complete ${isReceive ? 'incoming' : 'outgoing'} payment (${formatSats(p.amount)}).`,
+          `Could not complete ${isReceive ? 'incoming' : 'outgoing'} payment (${amtLabel}).`,
         );
         break;
       }
       default:
         break;
     }
-  }, []);
+  }, [settings.displayUnit]);
 
   const sdk = useWalletSdk(isAuthenticated, networkReconnectNonce, onPaymentEvent);
   const [state, dispatch] = useReducer(walletReducer, initialState);
@@ -208,6 +247,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         isLoading: sdk.isLoading,
         nodeState: sdk.nodeState,
         transactions: sdk.transactions,
+        channels: sdk.channels,
+        channelsHydrated: sdk.channelsHydrated,
       }),
     [
       state,
@@ -217,48 +258,42 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       sdk.isLoading,
       sdk.nodeState,
       sdk.transactions,
+      sdk.channels,
+      sdk.channelsHydrated,
     ]
   );
 
   const sendPayment = async (invoice: string, amountSats: number) => {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    dispatch({
-      type: 'ADD_TRANSACTION',
-      payload: {
-        id: `tx_${Date.now()}`,
-        type: 'sent',
-        status: 'completed',
-        amountSats,
-        feeSats: Math.floor(amountSats * 0.001),
-        timestamp: Date.now() / 1000,
-        description: 'Lightning payment',
-        bolt11: invoice,
-      },
-    });
+    const payment = await sendLightningPayment(invoice, amountSats);
+    dispatch({ type: 'ADD_TRANSACTION', payload: mapPaymentToTransaction(payment) });
     await sdk.refreshNodeState();
     await sdk.refreshTransactions();
   };
 
-  const createInvoice = async (amountSats: number, description?: string): Promise<string> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return `lnbc${amountSats}n1mock_invoice_${Date.now()}`;
+  const createInvoice = async (
+    amountSats: number,
+    description?: string
+  ): Promise<LightningInvoiceResult> => {
+    return createLightningInvoice(amountSats, description);
+  };
+
+  const estimateWithdrawalFee = async (
+    address: string,
+    amountSats: number,
+    satPerVbyte: number
+  ) => {
+    return estimateWithdrawalFeeService(address, amountSats, satPerVbyte);
   };
 
   const withdrawOnchain = async (address: string, amountSats: number, feeRate: number) => {
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    dispatch({
-      type: 'ADD_TRANSACTION',
-      payload: {
-        id: `tx_${Date.now()}`,
-        type: 'sent',
-        status: 'pending',
-        amountSats,
-        feeSats: feeRate * 250,
-        timestamp: Date.now() / 1000,
-        description: 'On-chain withdrawal',
-        destination: address,
-      },
-    });
+    const txid = await executeWithdrawal(address, amountSats, feeRate);
+    await sdk.refreshNodeState();
+    await sdk.refreshTransactions();
+    return txid;
+  };
+
+  const validateWithdrawalAddress = async (address: string) => {
+    return validateWithdrawalAddressService(address);
   };
 
   return (
@@ -268,10 +303,19 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         dispatch,
         isLoading: sdk.isLoading,
         sdkError: sdk.error,
+        receiveChannelOpening: sdk.receiveChannelOpening,
+        startReceiveChannelOpeningMonitor: sdk.startReceiveChannelOpeningMonitor,
+        stopReceiveChannelOpeningMonitor: sdk.stopReceiveChannelOpeningMonitor,
         reconnectAfterNetworkChange,
         sendPayment,
         createInvoice,
         withdrawOnchain,
+        estimateWithdrawalFee,
+        validateWithdrawalAddress,
+        refreshTransactions: sdk.refreshTransactions,
+        refreshNodeState: sdk.refreshNodeState,
+        refreshChannels: sdk.refreshChannels,
+        fetchTransactionPage: sdk.fetchTransactionPage,
       }}>
       {children}
     </WalletContext.Provider>

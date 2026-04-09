@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
+import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Header} from '@components/common/Header';
 import {Card} from '@components/common/Card';
 import {Badge} from '@components/common/Badge';
@@ -17,6 +18,9 @@ import {useWallet} from '@context/WalletContext';
 import {colors, spacing, typography, borderRadius} from '@theme/index';
 import {formatSats, truncateMiddle} from '@utils/formatters';
 import type {Channel, ChannelState} from '@/types/wallet';
+import type {HomeStackParamList} from '@/types/navigation';
+
+type Nav = NativeStackNavigationProp<HomeStackParamList, 'ChannelList'>;
 
 type Filter = 'all' | ChannelState;
 
@@ -25,6 +29,7 @@ const FILTERS: {key: Filter; label: string}[] = [
   {key: 'active', label: 'Active'},
   {key: 'inactive', label: 'Inactive'},
   {key: 'pending_open', label: 'Pending'},
+  {key: 'closed', label: 'Closed'},
 ];
 
 function getChannelBadge(state: ChannelState) {
@@ -37,11 +42,13 @@ function getChannelBadge(state: ChannelState) {
       return {label: 'Opening', variant: 'warning' as const};
     case 'pending_close':
       return {label: 'Closing', variant: 'error' as const};
+    case 'closed':
+      return {label: 'Closed', variant: 'default' as const};
   }
 }
 
 export function ChannelListScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const {state} = useWallet();
   const [filter, setFilter] = useState<Filter>('all');
@@ -65,42 +72,46 @@ export function ChannelListScreen() {
         : 0;
 
     return (
-      <Card style={styles.channelCard}>
-        <View style={styles.channelHeader}>
-          <Text style={styles.channelAlias}>
-            {item.remoteAlias || truncateMiddle(item.remotePubkey, 8, 6)}
-          </Text>
-          <Badge label={badge.label} variant={badge.variant} />
-        </View>
-
-        <View style={styles.capacitySection}>
-          <View style={styles.barContainer}>
-            <ProgressBar
-              progress={localPercent}
-              color={colors.channelLocal}
-              backgroundColor={colors.channelRemote}
-              height={8}
-            />
-          </View>
-          <View style={styles.capacityLabels}>
-            <Text style={styles.capacityLocal}>
-              Local: {formatSats(item.localBalanceSats)}
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => navigation.navigate('ChannelDetail', {channel: item})}>
+        <Card style={styles.channelCard}>
+          <View style={styles.channelHeader}>
+            <Text style={styles.channelAlias}>
+              {item.remoteAlias || truncateMiddle(item.remotePubkey, 8, 6)}
             </Text>
-            <Text style={styles.capacityRemote}>
-              Remote: {formatSats(item.remoteBalanceSats)}
-            </Text>
+            <Badge label={badge.label} variant={badge.variant} />
           </View>
-        </View>
 
-        <View style={styles.channelFooter}>
-          <Text style={styles.capacityTotal}>
-            Capacity: {formatSats(item.capacitySats)} sats
-          </Text>
-          {item.shortChannelId && (
-            <Text style={styles.channelId}>{item.shortChannelId}</Text>
-          )}
-        </View>
-      </Card>
+          <View style={styles.capacitySection}>
+            <View style={styles.barContainer}>
+              <ProgressBar
+                progress={localPercent}
+                color={colors.channelLocal}
+                backgroundColor={colors.channelRemote}
+                height={8}
+              />
+            </View>
+            <View style={styles.capacityLabels}>
+              <Text style={styles.capacityLocal}>
+                Local: {formatSats(item.localBalanceSats)}
+              </Text>
+              <Text style={styles.capacityRemote}>
+                Remote: {formatSats(item.remoteBalanceSats)}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.channelFooter}>
+            <Text style={styles.capacityTotal}>
+              Capacity: {formatSats(item.capacitySats)} sats
+            </Text>
+            {item.shortChannelId && (
+              <Text style={styles.channelId}>{item.shortChannelId}</Text>
+            )}
+          </View>
+        </Card>
+      </TouchableOpacity>
     );
   };
 

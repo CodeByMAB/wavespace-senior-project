@@ -5,6 +5,7 @@ import {
   type SdkEvent,
   SdkEvent_Tags,
   type EventListener,
+  PaymentType,
 } from '@breeztech/breez-sdk-spark-react-native';
 import {
   initializeWallet,
@@ -12,13 +13,17 @@ import {
   registerEventListener,
   removeEventListener,
   getNodeState,
+  getChannels,
+  getWalletInstance,
   listTransactions,
+  listTransactionsPage,
   mapSdkError,
   logWalletOperation,
   type NodeState,
 } from '@services/walletService';
 import { ASYNC_KEYS, nodeStateCacheKey } from '@constants/storage';
-import type { Transaction } from '@/types/wallet';
+import type { Channel, Transaction, ReceiveChannelOpeningState } from '@/types/wallet';
+import { getBtcPriceUsd } from '@services/priceService';
 
 async function readPersistedNetwork(): Promise<'mainnet' | 'testnet'> {
   try {
@@ -56,11 +61,17 @@ export function useWallet(
 ) {
   const [state, setState] = useState<WalletState>(INITIAL_STATE);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channelsHydrated, setChannelsHydrated] = useState(false);
+  const [receiveOpeningActive, setReceiveOpeningActive] = useState(false);
+  const [receiveChannelOpening, setReceiveChannelOpening] =
+    useState<ReceiveChannelOpeningState>({ status: 'idle' });
   const [appStateNonce, setAppStateNonce] = useState(0);
   const listenerIdRef = useRef<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
   const onPaymentEventRef = useRef(onPaymentEvent);
   onPaymentEventRef.current = onPaymentEvent;
+  const receiveOpeningMonitorRef = useRef(false);
 
   /**
    * Generation counter. Incremented whenever a cleanup or a new connect
@@ -85,6 +96,63 @@ export function useWallet(
       logWalletOperation({ operation: 'listTransactions', error: err });
     }
   }, []);
+
+  const refreshChannels = useCallback(async () => {
+    try {
+      const list = await getChannels();
+      setChannels(list);
+    } catch (err) {
+      logWalletOperation({ operation: 'getChannels', error: err });
+    } finally {
+      setChannelsHydrated(true);
+    }
+  }, []);
+
+  const updateOpeningProgressFromSdk = useCallback(() => {
+    if (!receiveOpeningMonitorRef.current) return;
+    const inst = getWalletInstance();
+    if (!inst) return;
+    try {
+      const p = inst.getLeafOptimizationProgress();
+      const isOptimizing = p.isRunning;
+      setReceiveChannelOpening({
+        status: 'opening',
+        message: isOptimizing
+          ? 'Preparing inbound liquidity…'
+          : 'Syncing channel state…',
+        currentRound: p.currentRound,
+        totalRounds: p.totalRounds,
+        isOptimizing,
+      });
+    } catch {
+      // Non-fatal: progress is best-effort
+    }
+  }, []);
+
+  const startReceiveChannelOpeningMonitor = useCallback(() => {
+    receiveOpeningMonitorRef.current = true;
+    setReceiveOpeningActive(true);
+    updateOpeningProgressFromSdk();
+  }, [updateOpeningProgressFromSdk]);
+
+  const stopReceiveChannelOpeningMonitor = useCallback(() => {
+    receiveOpeningMonitorRef.current = false;
+    setReceiveOpeningActive(false);
+    setReceiveChannelOpening({ status: 'idle' });
+  }, []);
+
+  useEffect(() => {
+    if (!receiveOpeningActive) return;
+    const id = setInterval(updateOpeningProgressFromSdk, 2000);
+    return () => clearInterval(id);
+  }, [receiveOpeningActive, updateOpeningProgressFromSdk]);
+
+  const fetchTransactionPage = useCallback(
+    async (params?: {cursor?: string | null; limit?: number}) => {
+      return listTransactionsPage(params);
+    },
+    [],
+  );
 
   const refreshBalance = useCallback(async () => {
     try {
@@ -134,6 +202,11 @@ export function useWallet(
         sessionRef.current++;
         setState(INITIAL_STATE);
         setTransactions([]);
+        setChannels([]);
+        setChannelsHydrated(false);
+        receiveOpeningMonitorRef.current = false;
+        setReceiveOpeningActive(false);
+        setReceiveChannelOpening({ status: 'idle' });
         const id = listenerIdRef.current;
         listenerIdRef.current = null;
         cleanupPromiseRef.current = (async () => {
@@ -173,6 +246,7 @@ export function useWallet(
       if (session !== sessionRef.current) return;
 
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
+      setChannelsHydrated(false);
 
       // Bootstrap UI with the last-known node state for the *persisted* network only.
       try {
@@ -256,7 +330,9 @@ export function useWallet(
       // Fetch full node state after successful connection.
       try {
         await refreshNodeState();
+        await refreshChannels();
         await loadTransactions();
+        await getBtcPriceUsd();
       } catch (err) {
         logWalletOperation({ operation: 'initialNodeState', error: err });
       }
@@ -277,16 +353,52 @@ export function useWallet(
             case SdkEvent_Tags.Synced:
               setState((prev) => ({ ...prev, isSynced: true }));
               await refreshNodeState(Date.now());
+              await refreshChannels();
               await pullTransactionsFromSdk();
+              await getBtcPriceUsd();
               break;
             case SdkEvent_Tags.PaymentSucceeded:
+              await refreshNodeState();
+              await refreshChannels();
+              await pullTransactionsFromSdk();
+              if (
+                receiveOpeningMonitorRef.current &&
+                event.inner.payment.paymentType === PaymentType.Receive
+              ) {
+                receiveOpeningMonitorRef.current = false;
+                setReceiveOpeningActive(false);
+                setReceiveChannelOpening({ status: 'idle' });
+              }
+              onPaymentEventRef.current?.(event);
+              break;
             case SdkEvent_Tags.ClaimedDeposits:
               await refreshNodeState();
+              await refreshChannels();
               await pullTransactionsFromSdk();
               onPaymentEventRef.current?.(event);
               break;
             case SdkEvent_Tags.PaymentPending:
+              await refreshNodeState();
+              await pullTransactionsFromSdk();
+              onPaymentEventRef.current?.(event);
+              break;
             case SdkEvent_Tags.PaymentFailed:
+              await refreshNodeState();
+              await pullTransactionsFromSdk();
+              if (
+                receiveOpeningMonitorRef.current &&
+                event.inner.payment.paymentType === PaymentType.Receive
+              ) {
+                receiveOpeningMonitorRef.current = false;
+                setReceiveOpeningActive(false);
+                setReceiveChannelOpening({
+                  status: 'failed',
+                  message:
+                    'Inbound payment or channel setup did not complete. You can generate a new invoice and try again.',
+                });
+              }
+              onPaymentEventRef.current?.(event);
+              break;
             case SdkEvent_Tags.UnclaimedDeposits:
               await refreshNodeState();
               await pullTransactionsFromSdk();
@@ -294,7 +406,11 @@ export function useWallet(
               break;
             case SdkEvent_Tags.Optimization:
               await refreshNodeState();
+              await refreshChannels();
               await pullTransactionsFromSdk();
+              if (receiveOpeningMonitorRef.current) {
+                updateOpeningProgressFromSdk();
+              }
               break;
             default:
               break;
@@ -326,6 +442,11 @@ export function useWallet(
       // Signal disconnected to the UI synchronously before async teardown.
       setState(INITIAL_STATE);
       setTransactions([]);
+      setChannels([]);
+      setChannelsHydrated(false);
+      receiveOpeningMonitorRef.current = false;
+      setReceiveOpeningActive(false);
+      setReceiveChannelOpening({ status: 'idle' });
 
       const id = listenerIdRef.current;
       listenerIdRef.current = null;
@@ -354,13 +475,22 @@ export function useWallet(
     appStateNonce,
     refreshBalance,
     refreshNodeState,
+    refreshChannels,
+    updateOpeningProgressFromSdk,
   ]);
 
   return {
     ...state,
     transactions,
+    channels,
+    channelsHydrated,
+    receiveChannelOpening,
+    startReceiveChannelOpeningMonitor,
+    stopReceiveChannelOpeningMonitor,
     refreshBalance,
     refreshNodeState,
     refreshTransactions,
+    refreshChannels,
+    fetchTransactionPage,
   };
 }

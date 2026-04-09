@@ -1,14 +1,21 @@
 import React, {useState} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
+import {RouteProp, useNavigation, useRoute} from '@react-navigation/native';
+import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Ionicons} from '@expo/vector-icons';
 import {CameraView, useCameraPermissions} from 'expo-camera';
 import {Button} from '@components/common/Button';
 import {colors, spacing, typography} from '@theme/index';
+import type {HomeStackParamList} from '@/types/navigation';
+import {parseBitcoinDestination} from '@utils/bitcoin';
+
+type Nav = NativeStackNavigationProp<HomeStackParamList, 'QRScanner'>;
+type ScannerRoute = RouteProp<HomeStackParamList, 'QRScanner'>;
 
 export function QRScannerScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
+  const route = useRoute<ScannerRoute>();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -16,8 +23,15 @@ export function QRScannerScreen() {
   const handleBarCodeScanned = ({data}: {data: string}) => {
     if (scanned) return;
     setScanned(true);
+    if (route.params.returnScreen === 'Withdraw') {
+      const parsed = parseBitcoinDestination(data);
+      navigation.navigate('Withdraw', {
+        scannedAddress: parsed?.normalizedAddress,
+        scannedPayload: data,
+      });
+      return;
+    }
     navigation.goBack();
-    // In a real app, pass scanned data back to the previous screen
   };
 
   if (!permission) {

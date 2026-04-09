@@ -15,19 +15,31 @@ interface SettingsState {
   network: Network;
   biometricsEnabled: boolean;
   hideBalance: boolean;
+  /** Seconds until lock after background; `0` = never. */
+  autoLockTimeout: number;
+  /** Warn when balance exceeds the app-defined large-balance threshold. */
+  securityAlertLargeBalance: boolean;
+  /** Warn when there are unconfirmed / pending inbound or outbound funds. */
+  securityAlertUnconfirmedTx: boolean;
 }
 
 type SettingsAction =
   | {type: 'SET_DISPLAY_UNIT'; payload: DisplayUnit}
   | {type: 'SET_NETWORK'; payload: Network}
   | {type: 'TOGGLE_BIOMETRICS'}
-  | {type: 'TOGGLE_HIDE_BALANCE'};
+  | {type: 'TOGGLE_HIDE_BALANCE'}
+  | {type: 'SET_AUTO_LOCK_TIMEOUT'; payload: number}
+  | {type: 'SET_SECURITY_ALERT_LARGE_BALANCE'; payload: boolean}
+  | {type: 'SET_SECURITY_ALERT_UNCONFIRMED_TX'; payload: boolean};
 
 const initialSettings: SettingsState = {
   displayUnit: 'sats',
   network: 'testnet',
   biometricsEnabled: false,
   hideBalance: false,
+  autoLockTimeout: 0,
+  securityAlertLargeBalance: true,
+  securityAlertUnconfirmedTx: true,
 };
 
 function settingsReducer(
@@ -43,14 +55,35 @@ function settingsReducer(
       return {...state, biometricsEnabled: !state.biometricsEnabled};
     case 'TOGGLE_HIDE_BALANCE':
       return {...state, hideBalance: !state.hideBalance};
+    case 'SET_AUTO_LOCK_TIMEOUT':
+      return {...state, autoLockTimeout: action.payload};
+    case 'SET_SECURITY_ALERT_LARGE_BALANCE':
+      return {...state, securityAlertLargeBalance: action.payload};
+    case 'SET_SECURITY_ALERT_UNCONFIRMED_TX':
+      return {...state, securityAlertUnconfirmedTx: action.payload};
     default:
       return state;
   }
 }
 
+function parseDisplayUnit(raw: string | null | undefined): DisplayUnit {
+  if (raw === 'btc' || raw === 'both' || raw === 'sats') {
+    return raw;
+  }
+  return 'sats';
+}
+
+function parseBoolPref(raw: string | null | undefined, defaultValue: boolean): boolean {
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  return defaultValue;
+}
+
 interface SettingsContextType {
   state: SettingsState;
   dispatch: React.Dispatch<SettingsAction>;
+  /** Persists network to storage, then updates state. Await before wallet reconnect. */
+  setNetworkWithPersistence: (network: Network) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(
@@ -60,11 +93,34 @@ const SettingsContext = createContext<SettingsContextType | undefined>(
 export function SettingsProvider({children}: {children: ReactNode}) {
   const [state, rawDispatch] = useReducer(settingsReducer, initialSettings);
 
+  const setNetworkWithPersistence = useCallback(async (network: Network) => {
+    await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, network);
+    rawDispatch({type: 'SET_NETWORK', payload: network});
+  }, []);
+
   const dispatch = useCallback((action: SettingsAction) => {
-    if (action.type === 'SET_NETWORK') {
-      AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, action.payload).catch(
+    if (action.type === 'SET_AUTO_LOCK_TIMEOUT') {
+      AsyncStorage.setItem(
+        ASYNC_KEYS.AUTO_LOCK_TIMEOUT,
+        String(action.payload),
+      ).catch(() => {});
+    }
+    if (action.type === 'SET_DISPLAY_UNIT') {
+      AsyncStorage.setItem(ASYNC_KEYS.DISPLAY_UNIT, action.payload).catch(
         () => {},
       );
+    }
+    if (action.type === 'SET_SECURITY_ALERT_LARGE_BALANCE') {
+      AsyncStorage.setItem(
+        ASYNC_KEYS.SECURITY_ALERT_LARGE_BALANCE,
+        action.payload ? 'true' : 'false',
+      ).catch(() => {});
+    }
+    if (action.type === 'SET_SECURITY_ALERT_UNCONFIRMED_TX') {
+      AsyncStorage.setItem(
+        ASYNC_KEYS.SECURITY_ALERT_UNCONFIRMED_TX,
+        action.payload ? 'true' : 'false',
+      ).catch(() => {});
     }
     rawDispatch(action);
   }, []);
@@ -80,10 +136,47 @@ export function SettingsProvider({children}: {children: ReactNode}) {
           if (!cancelled) {
             rawDispatch({type: 'SET_NETWORK', payload: 'testnet'});
           }
-          return;
+        } else {
+          const network: Network = raw === 'mainnet' ? 'mainnet' : 'testnet';
+          rawDispatch({type: 'SET_NETWORK', payload: network});
         }
-        const network: Network = raw === 'mainnet' ? 'mainnet' : 'testnet';
-        rawDispatch({type: 'SET_NETWORK', payload: network});
+
+        const lockRaw = await AsyncStorage.getItem(ASYNC_KEYS.AUTO_LOCK_TIMEOUT);
+        if (!cancelled && lockRaw != null && lockRaw !== '') {
+          const n = parseInt(lockRaw, 10);
+          if (Number.isFinite(n) && n >= 0) {
+            rawDispatch({type: 'SET_AUTO_LOCK_TIMEOUT', payload: n});
+          }
+        }
+
+        const unitRaw = await AsyncStorage.getItem(ASYNC_KEYS.DISPLAY_UNIT);
+        if (!cancelled) {
+          rawDispatch({
+            type: 'SET_DISPLAY_UNIT',
+            payload: parseDisplayUnit(unitRaw),
+          });
+        }
+
+        const largeBalRaw = await AsyncStorage.getItem(
+          ASYNC_KEYS.SECURITY_ALERT_LARGE_BALANCE,
+        );
+        const unconfRaw = await AsyncStorage.getItem(
+          ASYNC_KEYS.SECURITY_ALERT_UNCONFIRMED_TX,
+        );
+        if (!cancelled) {
+          if (largeBalRaw != null && largeBalRaw !== '') {
+            rawDispatch({
+              type: 'SET_SECURITY_ALERT_LARGE_BALANCE',
+              payload: parseBoolPref(largeBalRaw, initialSettings.securityAlertLargeBalance),
+            });
+          }
+          if (unconfRaw != null && unconfRaw !== '') {
+            rawDispatch({
+              type: 'SET_SECURITY_ALERT_UNCONFIRMED_TX',
+              payload: parseBoolPref(unconfRaw, initialSettings.securityAlertUnconfirmedTx),
+            });
+          }
+        }
       } catch {
         if (!cancelled) {
           await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, 'testnet').catch(
@@ -99,7 +192,8 @@ export function SettingsProvider({children}: {children: ReactNode}) {
   }, []);
 
   return (
-    <SettingsContext.Provider value={{state, dispatch}}>
+    <SettingsContext.Provider
+      value={{state, dispatch, setNetworkWithPersistence}}>
       {children}
     </SettingsContext.Provider>
   );

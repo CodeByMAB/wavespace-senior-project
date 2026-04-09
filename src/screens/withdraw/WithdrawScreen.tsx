@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -6,19 +6,26 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  Linking,
   Alert,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
+import {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {RouteProp, useNavigation, useRoute} from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
 import {Header} from '@components/common/Header';
 import {Card} from '@components/common/Card';
 import {Button} from '@components/common/Button';
 import {Input} from '@components/common/Input';
 import {BottomSheet} from '@components/common/BottomSheet';
+import {CopyableText} from '@components/common/CopyableText';
 import {useWallet} from '@context/WalletContext';
+import {useSettings} from '@context/SettingsContext';
 import {colors, spacing, typography, borderRadius} from '@theme/index';
-import {formatSats, satsToFiat} from '@utils/formatters';
+import {formatAmount, satsToFiat} from '@utils/formatters';
+import {parseBitcoinDestination} from '@utils/bitcoin';
 import type {FeeSpeed} from '@/types/wallet';
+import type {HomeStackParamList} from '@/types/navigation';
 
 const FEE_OPTIONS: {key: FeeSpeed; label: string; rate: number; time: string}[] = [
   {key: 'low', label: 'Low', rate: 1, time: '~60 min'},
@@ -27,34 +34,169 @@ const FEE_OPTIONS: {key: FeeSpeed; label: string; rate: number; time: string}[] 
 ];
 
 export function WithdrawScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList, 'Withdraw'>>();
+  const route = useRoute<RouteProp<HomeStackParamList, 'Withdraw'>>();
   const insets = useSafeAreaInsets();
-  const {withdrawOnchain} = useWallet();
+  const {state, withdrawOnchain, estimateWithdrawalFee, validateWithdrawalAddress} = useWallet();
+  const {state: settings} = useSettings();
   const [address, setAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [selectedFee, setSelectedFee] = useState<FeeSpeed>('medium');
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [estimatedFeeSats, setEstimatedFeeSats] = useState<number | null>(null);
+  const [feeLoading, setFeeLoading] = useState(false);
+  const [lastTxid, setLastTxid] = useState<string | null>(null);
+  const [isAddressValid, setIsAddressValid] = useState(false);
+  const [validationLoading, setValidationLoading] = useState(false);
 
   const amountSats = parseInt(amount || '0', 10);
   const feeOption = FEE_OPTIONS.find(f => f.key === selectedFee)!;
-  const estimatedFee = feeOption.rate * 250;
-  const isValidAddress = address.startsWith('bc1') || address.startsWith('tb1') || address.startsWith('3') || address.startsWith('1');
-  const canWithdraw = address.length > 0 && isValidAddress && amountSats > 0;
+  const fallbackEstimatedFee = feeOption.rate * 250;
+  const estimatedFee = estimatedFeeSats ?? fallbackEstimatedFee;
+  const normalizedAddress = useMemo(() => {
+    const parsed = parseBitcoinDestination(address);
+    return parsed?.normalizedAddress ?? address.trim();
+  }, [address]);
+  const lowerAddress = normalizedAddress.toLowerCase();
+  const canWithdraw = normalizedAddress.length > 0 && isAddressValid && amountSats > 0;
+  const networkMismatchWarning = useMemo(() => {
+    if (!isAddressValid || lowerAddress.length === 0) return null;
+    const isMainnetAddress =
+      lowerAddress.startsWith('bc1') ||
+      lowerAddress.startsWith('1') ||
+      lowerAddress.startsWith('3');
+    const isTestnetAddress =
+      lowerAddress.startsWith('tb1') ||
+      lowerAddress.startsWith('m') ||
+      lowerAddress.startsWith('n') ||
+      lowerAddress.startsWith('2');
+    if (state.network === 'mainnet' && isTestnetAddress) {
+      return 'This looks like a testnet address, but your wallet is on mainnet.';
+    }
+    if (state.network === 'testnet' && isMainnetAddress) {
+      return 'This looks like a mainnet address, but your wallet is on testnet.';
+    }
+    return null;
+  }, [isAddressValid, lowerAddress, state.network]);
+
+  useEffect(() => {
+    const scannedInput = route.params?.scannedPayload ?? route.params?.scannedAddress;
+    if (scannedInput) {
+      const parsed = parseBitcoinDestination(scannedInput);
+      if (parsed) {
+        setAddress(parsed.normalizedAddress);
+        if (parsed.amountSats && parsed.amountSats > 0) {
+          setAmount(String(parsed.amountSats));
+        }
+      } else {
+        setAddress(scannedInput.trim());
+      }
+    }
+  }, [route.params?.scannedAddress, route.params?.scannedPayload]);
+
+  useEffect(() => {
+    if (!normalizedAddress) {
+      setIsAddressValid(false);
+      setValidationLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setValidationLoading(true);
+      try {
+        const valid = await validateWithdrawalAddress(normalizedAddress);
+        if (!cancelled) {
+          setIsAddressValid(valid);
+        }
+      } catch {
+        if (!cancelled) {
+          setIsAddressValid(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setValidationLoading(false);
+        }
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [normalizedAddress, validateWithdrawalAddress]);
+
+  useEffect(() => {
+    if (!canWithdraw) {
+      setEstimatedFeeSats(null);
+      setFeeLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setFeeLoading(true);
+      try {
+        const fee = await estimateWithdrawalFee(normalizedAddress, amountSats, feeOption.rate);
+        if (!cancelled) {
+          setEstimatedFeeSats(fee);
+        }
+      } catch {
+        if (!cancelled) {
+          setEstimatedFeeSats(fallbackEstimatedFee);
+        }
+      } finally {
+        if (!cancelled) {
+          setFeeLoading(false);
+        }
+      }
+    }, 600);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [amountSats, canWithdraw, estimateWithdrawalFee, fallbackEstimatedFee, feeOption.rate, normalizedAddress]);
 
   const handleConfirmWithdraw = async () => {
     setLoading(true);
     try {
-      await withdrawOnchain(address, amountSats, feeOption.rate);
+      const txid = await withdrawOnchain(normalizedAddress, amountSats, feeOption.rate);
       setShowConfirm(false);
-      Alert.alert(
-        'Withdrawal Submitted',
-        'Your on-chain withdrawal has been broadcast.',
-        [{text: 'OK', onPress: () => navigation.goBack()}],
-      );
+      setLastTxid(txid);
+      setShowSuccess(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not complete this withdrawal.';
+      Alert.alert('Withdrawal failed', message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePasteAddress = async () => {
+    const value = await Clipboard.getStringAsync();
+    if (value) {
+      const parsed = parseBitcoinDestination(value);
+      if (parsed) {
+        setAddress(parsed.normalizedAddress);
+        if (parsed.amountSats && parsed.amountSats > 0) {
+          setAmount(String(parsed.amountSats));
+        }
+      } else {
+        setAddress(value.trim());
+      }
+    }
+  };
+
+  const handleOpenExplorer = async () => {
+    if (!lastTxid) return;
+    const base =
+      state.network === 'mainnet'
+        ? 'https://mempool.space/tx/'
+        : 'https://mempool.space/testnet/tx/';
+    await Linking.openURL(`${base}${lastTxid}`);
   };
 
   return (
@@ -81,11 +223,36 @@ export function WithdrawScreen() {
         <Input
           label="DESTINATION BITCOIN ADDRESS"
           placeholder="bc1q..."
-          value={address}
+          value={normalizedAddress}
           onChangeText={setAddress}
           autoCapitalize="none"
-          error={address.length > 0 && !isValidAddress ? 'Invalid address format' : undefined}
+          error={
+            normalizedAddress.length > 0 && !validationLoading && !isAddressValid
+              ? 'Invalid address format'
+              : undefined
+          }
         />
+        <View style={styles.inputActions}>
+          <Button
+            title="Paste"
+            variant="secondary"
+            size="sm"
+            icon="clipboard-outline"
+            fullWidth={false}
+            onPress={handlePasteAddress}
+          />
+          <Button
+            title="Scan QR"
+            variant="secondary"
+            size="sm"
+            icon="scan-outline"
+            fullWidth={false}
+            onPress={() => navigation.navigate('QRScanner', {returnScreen: 'Withdraw'})}
+          />
+        </View>
+        {networkMismatchWarning ? (
+          <Text style={styles.networkWarning}>{networkMismatchWarning}</Text>
+        ) : null}
 
         <View>
           <Text style={styles.label}>AMOUNT</Text>
@@ -115,7 +282,7 @@ export function WithdrawScreen() {
                 onPress={() => setSelectedFee(opt.key)}>
                 <Text style={styles.feeLabel}>{opt.label}</Text>
                 <Text style={styles.feeRate}>
-                  ~{formatSats(opt.rate * 250)} sats
+                  ~{formatAmount(opt.rate * 250, settings.displayUnit)}
                 </Text>
                 <Text style={styles.feeTime}>{opt.time}</Text>
               </TouchableOpacity>
@@ -126,16 +293,22 @@ export function WithdrawScreen() {
         <Card>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Amount</Text>
-            <Text style={styles.detailValue}>{formatSats(amountSats)} sats</Text>
+            <Text style={styles.detailValue}>
+              {formatAmount(amountSats, settings.displayUnit)}
+            </Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>On-chain Fee</Text>
-            <Text style={styles.detailValue}>~{formatSats(estimatedFee)} sats</Text>
+            <Text style={styles.detailValue}>
+              {feeLoading
+                ? 'Estimating...'
+                : `~${formatAmount(estimatedFee, settings.displayUnit)}`}
+            </Text>
           </View>
           <View style={[styles.detailRow, {borderBottomWidth: 0}]}>
             <Text style={styles.detailLabel}>Total Deducted</Text>
             <Text style={[styles.detailValue, {color: colors.primary, fontWeight: '700'}]}>
-              {formatSats(amountSats + estimatedFee)} sats
+              {formatAmount(amountSats + estimatedFee, settings.displayUnit)}
             </Text>
           </View>
         </Card>
@@ -161,21 +334,25 @@ export function WithdrawScreen() {
         <View style={styles.sheetDetail}>
           <Text style={styles.detailLabel}>To</Text>
           <Text style={[styles.detailValue, {fontSize: 12}]} numberOfLines={1}>
-            {address}
+            {normalizedAddress}
           </Text>
         </View>
         <View style={styles.sheetDetail}>
           <Text style={styles.detailLabel}>Amount</Text>
-          <Text style={styles.detailValue}>{formatSats(amountSats)} sats</Text>
+          <Text style={styles.detailValue}>
+            {formatAmount(amountSats, settings.displayUnit)}
+          </Text>
         </View>
         <View style={styles.sheetDetail}>
           <Text style={styles.detailLabel}>Fee ({feeOption.label})</Text>
-          <Text style={styles.detailValue}>~{formatSats(estimatedFee)} sats</Text>
+          <Text style={styles.detailValue}>
+            ~{formatAmount(estimatedFee, settings.displayUnit)}
+          </Text>
         </View>
         <View style={styles.sheetDetail}>
           <Text style={styles.detailLabel}>Total</Text>
           <Text style={[styles.detailValue, {color: colors.primary}]}>
-            {formatSats(amountSats + estimatedFee)} sats
+            {formatAmount(amountSats + estimatedFee, settings.displayUnit)}
           </Text>
         </View>
         <View style={{gap: spacing.sm, marginTop: spacing.lg}}>
@@ -188,6 +365,34 @@ export function WithdrawScreen() {
             title="Cancel"
             variant="ghost"
             onPress={() => setShowConfirm(false)}
+          />
+        </View>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={showSuccess}
+        onClose={() => {
+          setShowSuccess(false);
+          navigation.goBack();
+        }}>
+        <Text style={styles.sheetTitle}>Withdrawal Submitted</Text>
+        <Text style={styles.successText}>
+          Your on-chain withdrawal has been broadcast successfully.
+        </Text>
+        {lastTxid ? <CopyableText label="Transaction ID" text={lastTxid} /> : null}
+        <View style={{gap: spacing.sm, marginTop: spacing.lg}}>
+          <Button
+            title="View on Explorer"
+            variant="outline"
+            onPress={handleOpenExplorer}
+            disabled={!lastTxid}
+          />
+          <Button
+            title="Done"
+            onPress={() => {
+              setShowSuccess(false);
+              navigation.goBack();
+            }}
           />
         </View>
       </BottomSheet>
@@ -207,6 +412,15 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textSecondary,
     marginBottom: spacing.sm,
+  },
+  inputActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  networkWarning: {
+    ...typography.bodySmall,
+    color: colors.warning,
+    marginTop: -spacing.sm,
   },
   amountInput: {
     fontSize: 36,
@@ -289,5 +503,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  successText: {
+    ...typography.bodyMedium,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
   },
 });

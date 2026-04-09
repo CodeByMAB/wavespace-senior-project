@@ -1,4 +1,4 @@
-import type { Transaction } from './wallet';
+import type { Channel, Transaction } from './wallet';
 
 export type RootStackParamList = {
   Onboarding: undefined;
@@ -26,9 +26,10 @@ export type HomeStackParamList = {
   Dashboard: undefined;
   Send: { prefillInvoice?: string } | undefined;
   Receive: undefined;
-  Withdraw: undefined;
+  Withdraw: { scannedAddress?: string; scannedPayload?: string } | undefined;
   QRScanner: { returnScreen: 'Send' | 'Withdraw' };
   ChannelList: undefined;
+  ChannelDetail: { channel: Channel };
   TransactionDetail: { transaction: Transaction };
 };
 
@@ -39,4 +40,10 @@ export type TransactionsStackParamList = {
 
 export type SettingsStackParamList = {
   SettingsMain: undefined;
+  NetworkSelection: undefined;
+  DisplayUnits: undefined;
+  SecuritySettings: undefined;
+  ChangePIN: undefined;
+  BackupExport: undefined;
+  About: undefined;
 };

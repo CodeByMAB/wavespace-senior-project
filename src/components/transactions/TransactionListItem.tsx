@@ -2,8 +2,9 @@ import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import type {Transaction} from '@/types/wallet';
+import {useSettings} from '@context/SettingsContext';
 import {colors, spacing} from '@theme/index';
-import {formatSats, formatTimestamp} from '@utils/formatters';
+import {formatAmount, formatTimestamp} from '@utils/formatters';
 
 interface TransactionListItemProps {
   transaction: Transaction;
@@ -17,6 +18,8 @@ function getTypeIcon(type: Transaction['type']) {
       return {name: 'arrow-down' as const, color: colors.received};
     case 'sent':
     case 'pending_send':
+    case 'withdrawal':
+    case 'pending_withdrawal':
       return {name: 'arrow-up' as const, color: colors.sent};
     default:
       return {name: 'time-outline' as const, color: colors.pending};
@@ -27,9 +30,17 @@ export function TransactionListItem({
   transaction,
   onPress,
 }: TransactionListItemProps) {
+  const {state: settings} = useSettings();
   const icon = getTypeIcon(transaction.type);
   const isSent =
-    transaction.type === 'sent' || transaction.type === 'pending_send';
+    transaction.type === 'sent' ||
+    transaction.type === 'pending_send' ||
+    transaction.type === 'withdrawal' ||
+    transaction.type === 'pending_withdrawal';
+  const confirmationText =
+    transaction.type === 'withdrawal' || transaction.type === 'pending_withdrawal'
+      ? `  ·  ${transaction.confirmations ?? 0}/${transaction.confirmationTarget ?? 6} conf`
+      : '';
   const isPending = transaction.status === 'pending';
   const isFailed = transaction.status === 'failed';
 
@@ -50,12 +61,13 @@ export function TransactionListItem({
           {formatTimestamp(transaction.timestamp)}
           {isPending ? '  ·  Pending' : ''}
           {isFailed ? '  ·  Failed' : ''}
+          {confirmationText}
         </Text>
       </View>
 
       <Text style={styles.amount}>
         {isSent ? '-' : '+'}
-        {formatSats(transaction.amountSats)}
+        {formatAmount(transaction.amountSats, settings.displayUnit)}
       </Text>
     </TouchableOpacity>
   );
