@@ -14,6 +14,7 @@
     "test:e2e": "bash scripts/qa-e2e-maestro.sh",
     "generate:app-icon": "node scripts/generate-app-icon.cjs",
     "eas:build:dev:ios": "npx --yes eas-cli build --profile development --platform ios",
+    "eas:build:dev:ios:sim": "npx --yes eas-cli build --profile development-simulator --platform ios",
     "eas:build:dev:android": "npx --yes eas-cli build --profile development --platform android",
     "eas:build:preview:ios": "npx --yes eas-cli build --profile preview --platform ios",
     "eas:build:preview:android": "npx --yes eas-cli build --profile preview --platform android",

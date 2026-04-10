@@ -34,6 +34,13 @@ export function AboutScreen() {
   const { height: tipHeight, loading: tipLoading } = useMainnetTipHeight();
 
   const appVersion = Constants.expoConfig?.version ?? '—';
+  const releaseStage = Constants.expoConfig?.extra?.releaseStage as string | undefined;
+  const buildLabel =
+    releaseStage === 'development'
+      ? 'Development'
+      : releaseStage === 'preview'
+        ? 'Preview'
+        : null;
   const blockHeightLabel = tipLoading
     ? '…'
     : tipHeight != null
@@ -62,6 +69,18 @@ export function AboutScreen() {
             </View>
             <Text style={styles.rowValue}>{appVersion}</Text>
           </View>
+          {buildLabel != null ? (
+            <>
+              <View style={styles.separator} />
+              <View style={styles.row}>
+                <View style={styles.rowLeft}>
+                  <Ionicons name="hammer-outline" size={20} color={colors.warning} />
+                  <Text style={styles.rowLabel}>Build</Text>
+                </View>
+                <Text style={[styles.rowValue, styles.rowValueWarning]}>{buildLabel}</Text>
+              </View>
+            </>
+          ) : null}
           <View style={styles.separator} />
           <View style={styles.row}>
             <View style={styles.rowLeft}>
@@ -172,6 +191,10 @@ const styles = StyleSheet.create({
   rowValue: {
     fontSize: 14,
     color: colors.textTertiary,
+  },
+  rowValueWarning: {
+    color: colors.warning,
+    fontWeight: '600',
   },
   separator: {
     height: 1,

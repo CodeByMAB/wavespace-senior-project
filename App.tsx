@@ -4,11 +4,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
 import { WalletProvider } from './src/context/WalletContext';
 import { SettingsProvider } from './src/context/SettingsContext';
+import { NonProductionBanner } from './src/components/common/NonProductionBanner';
 import RootNavigator from './src/navigation/RootNavigator';
 
 export default function App() {
   return (
     <SafeAreaProvider>
+      <NonProductionBanner />
       <AuthProvider>
         <SettingsProvider>
           <WalletProvider>
