@@ -29,16 +29,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with coverage (thresholds enforced)
+        run: npm run test:coverage
 
-      - name: Lint code
+      - name: Lint (TypeScript)
         run: npm run lint
 
+      - name: Upload coverage artifacts
+        if: success() && matrix.node-version == '20.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-node-${{ matrix.node-version }}
+          path: |
+            coverage/coverage-summary.json
+            coverage/coverage-final.json
+            coverage/lcov.info
+            coverage/index.html
+          if-no-files-found: warn
+
       - name: Upload coverage to Codecov
-        if: success() && runner.os == 'Linux'
-        uses: codecov/codecov-action@v3
+        if: success() && matrix.node-version == '20.x'
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/**/*.json
+          files: coverage/coverage-final.json
           flags: unittests
+          fail_ci_if_error: false

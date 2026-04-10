@@ -1,0 +1,9 @@
+# Critical flow 2: begin wallet setup path (Breez SDK connect runs after mnemonic/PIN in app).
+# Requires dev build with Breez configured. Extend with PIN/mnemonic steps when test data is available.
+appId: com.anonymous.wavespace
+---
+- launchApp
+- tapOn: 'Create New Wallet'
+- extendedWaitUntil:
+    visible: 'Generate Wallet'
+    timeout: 20000

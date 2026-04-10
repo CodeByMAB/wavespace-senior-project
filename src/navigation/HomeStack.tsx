@@ -13,7 +13,13 @@ import type { Channel, Transaction } from '@/types/wallet';
 
 export type HomeStackParamList = {
   Dashboard: undefined;
-  Send: { prefillInvoice?: string } | undefined;
+  Send:
+    | {
+        prefillInvoice?: string;
+        prefillAddress?: string;
+        paymentType?: string;
+      }
+    | undefined;
   Receive: undefined;
   Withdraw: { scannedAddress?: string; scannedPayload?: string } | undefined;
   QRScanner: { returnScreen: 'Send' | 'Withdraw' };

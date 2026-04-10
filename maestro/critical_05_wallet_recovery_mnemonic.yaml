@@ -1,0 +1,8 @@
+# Critical flow 5: restore-from-mnemonic entry (recovery / key material handling).
+appId: com.anonymous.wavespace
+---
+- launchApp
+- tapOn: 'Restore Existing Wallet'
+- extendedWaitUntil:
+    visible: 'Restore Wallet'
+    timeout: 20000

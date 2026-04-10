@@ -6,7 +6,12 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "lint": "npx -y -p typescript@5.5.4 tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run src/integration",
+    "test:e2e": "bash scripts/qa-e2e-maestro.sh"
   },
   "dependencies": {
     "@breeztech/breez-sdk-spark-react-native": "^0.10.0",
@@ -46,9 +51,11 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/bip39": "^2.4.2",
     "@types/react": "~19.2.2",
+    "@vitest/coverage-v8": "^3.2.4",
     "babel-plugin-module-resolver": "^5.0.2",
     "babel-preset-expo": "~55.0.8",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4"
   },
   "private": true
 }

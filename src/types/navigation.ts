@@ -1,4 +1,5 @@
 import type { Channel, Transaction } from './wallet';
+import type { PaymentType } from '@/utils/bitcoin';
 
 export type RootStackParamList = {
   Onboarding: undefined;
@@ -24,7 +25,13 @@ export type MainTabParamList = {
 
 export type HomeStackParamList = {
   Dashboard: undefined;
-  Send: { prefillInvoice?: string } | undefined;
+  Send:
+    | {
+        prefillInvoice?: string;
+        prefillAddress?: string;
+        paymentType?: PaymentType;
+      }
+    | undefined;
   Receive: undefined;
   Withdraw: { scannedAddress?: string; scannedPayload?: string } | undefined;
   QRScanner: { returnScreen: 'Send' | 'Withdraw' };

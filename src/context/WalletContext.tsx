@@ -32,12 +32,13 @@ import {
   estimateWithdrawalFee as estimateWithdrawalFeeService,
   executeWithdrawal,
   mapPaymentToTransaction,
-  sendLightningPayment,
+  sendLightningPaymentResolved,
   validateWithdrawalAddress as validateWithdrawalAddressService,
   type TransactionPage,
   type NodeState,
   type LightningInvoiceResult,
 } from '@services/walletService';
+import type { PaymentType as AppPaymentType } from '@utils/bitcoin';
 
 type WalletAction =
   | { type: 'SET_INITIALIZED'; payload: boolean }
@@ -172,7 +173,11 @@ interface WalletContextType {
   stopReceiveChannelOpeningMonitor: () => void;
   /** Tears down the SDK, then reconnects so the next session uses the persisted network (e.g. after settings). */
   reconnectAfterNetworkChange: () => Promise<void>;
-  sendPayment: (invoice: string, amountSats: number) => Promise<void>;
+  sendPayment: (
+    recipient: string,
+    amountSats: number,
+    paymentTypeHint?: AppPaymentType,
+  ) => Promise<void>;
   createInvoice: (amountSats: number, description?: string) => Promise<LightningInvoiceResult>;
   withdrawOnchain: (address: string, amountSats: number, feeRate: number) => Promise<string>;
   estimateWithdrawalFee: (
@@ -263,8 +268,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     ]
   );
 
-  const sendPayment = async (invoice: string, amountSats: number) => {
-    const payment = await sendLightningPayment(invoice, amountSats);
+  const sendPayment = async (
+    recipient: string,
+    amountSats: number,
+    paymentTypeHint?: AppPaymentType,
+  ) => {
+    const payment = await sendLightningPaymentResolved(recipient, amountSats, paymentTypeHint);
     dispatch({ type: 'ADD_TRANSACTION', payload: mapPaymentToTransaction(payment) });
     await sdk.refreshNodeState();
     await sdk.refreshTransactions();

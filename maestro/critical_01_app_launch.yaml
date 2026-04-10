@@ -1,0 +1,8 @@
+# Critical flow 1: cold start and shell visible (SRS / ticket QA baseline).
+appId: com.anonymous.wavespace
+---
+- launchApp
+- extendedWaitUntil:
+    visible: 'Wavespace'
+    timeout: 30000
+- assertVisible: 'Your self-custodial Lightning wallet'

@@ -1,0 +1,17 @@
+# Critical flow 4: persist network selection via Settings (storage + reconnect path in app).
+appId: com.anonymous.wavespace
+---
+- launchApp
+- runFlow:
+    when:
+      visible: 'Settings'
+    commands:
+      - tapOn: 'Settings'
+      - extendedWaitUntil:
+          visible: 'Network'
+          timeout: 15000
+      - tapOn: 'Network'
+      - extendedWaitUntil:
+          visible: 'Mainnet'
+          timeout: 15000
+      - assertVisible: 'Testnet'

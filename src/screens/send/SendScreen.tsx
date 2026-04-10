@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
 import {Header} from '@components/common/Header';
 import {Card} from '@components/common/Card';
 import {Button} from '@components/common/Button';
@@ -19,12 +20,15 @@ import {useWallet} from '@context/WalletContext';
 import {useSettings} from '@context/SettingsContext';
 import {colors, spacing, typography, borderRadius} from '@theme/index';
 import {formatAmount, satsToFiat} from '@utils/formatters';
+import {detectPaymentType} from '@utils/bitcoin';
 import type {HomeStackParamList} from '@/types/navigation';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Send'>;
+type SendRoute = RouteProp<HomeStackParamList, 'Send'>;
 
 export function SendScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<SendRoute>();
   const insets = useSafeAreaInsets();
   const {sendPayment} = useWallet();
   const {state: settings} = useSettings();
@@ -33,6 +37,26 @@ export function SendScreen() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [unit, setUnit] = useState<'sats' | 'btc'>('sats');
+
+  useEffect(() => {
+    const p = route.params;
+    if (p?.prefillInvoice) {
+      setRecipient(p.prefillInvoice);
+    } else if (p?.prefillAddress) {
+      setRecipient(p.prefillAddress);
+    }
+  }, [route.params?.prefillInvoice, route.params?.prefillAddress]);
+
+  const handlePaste = useCallback(async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (text?.trim()) {
+        setRecipient(text.trim());
+      }
+    } catch {
+      Alert.alert('Paste failed', 'Could not read from the clipboard.');
+    }
+  }, []);
 
   const amountSats =
     unit === 'sats'
@@ -45,7 +69,12 @@ export function SendScreen() {
   const handleConfirmSend = async () => {
     setLoading(true);
     try {
-      await sendPayment(recipient, amountSats);
+      const detected = detectPaymentType(recipient);
+      const paymentTypeHint =
+        detected.type !== 'unknown'
+          ? detected.type
+          : route.params?.paymentType;
+      await sendPayment(recipient, amountSats, paymentTypeHint);
       setShowConfirm(false);
       Alert.alert('Payment Sent', 'Your Lightning payment was successful.', [
         {text: 'OK', onPress: () => navigation.goBack()},
@@ -82,7 +111,7 @@ export function SendScreen() {
             size="sm"
             icon="clipboard-outline"
             fullWidth={false}
-            onPress={() => {}}
+            onPress={handlePaste}
           />
           <Button
             title="Scan QR"

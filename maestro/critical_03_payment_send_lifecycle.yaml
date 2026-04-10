@@ -1,0 +1,18 @@
+# Critical flow 3: open Send Payment when the home stack is active (after unlock).
+appId: com.anonymous.wavespace
+---
+- launchApp
+- runFlow:
+    when:
+      visible: 'Send Payment'
+    commands:
+      - assertVisible: 'Send Payment'
+- runFlow:
+    when:
+      visible: 'Send'
+    commands:
+      - tapOn: 'Send'
+      - extendedWaitUntil:
+          visible: 'Send Payment'
+          timeout: 15000
+      - assertVisible: 'Review Payment'

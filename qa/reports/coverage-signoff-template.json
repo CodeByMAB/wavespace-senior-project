@@ -1,0 +1,21 @@
+{
+  "ticket": "8aac7435-def5-4837-bc7f-b1094e676254",
+  "buildOrTag": "",
+  "date": "",
+  "reviewer": "",
+  "vitest": {
+    "command": "npm run test:coverage",
+    "overallLinesPct": null,
+    "businessLogicScopeNote": "Thresholds enforced on src/services, src/utils, src/constants (secureStorageService excluded from denominator; see vitest.config.ts).",
+    "thresholdsMet": null
+  },
+  "artifacts": {
+    "coverageSummaryPath": "coverage/coverage-summary.json",
+    "coverageHtmlPath": "coverage/index.html",
+    "ciArtifactName": "coverage-report-node-<node-version>"
+  },
+  "approval": {
+    "approved": false,
+    "comments": ""
+  }
+}

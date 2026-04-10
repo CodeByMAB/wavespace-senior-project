@@ -11,6 +11,9 @@ import {
   ListPaymentsRequest,
   PaymentDetails_Tags,
   PrepareSendPaymentRequest,
+  PrepareLnurlPayRequest,
+  LnurlPayRequest,
+  InputType,
   ReceivePaymentMethod,
   ReceivePaymentRequest,
   SendPaymentMethod_Tags,
@@ -22,6 +25,7 @@ import {
   type GetInfoResponse,
   type Config,
   type Payment,
+  type LnurlPayRequestDetails,
   GetInfoRequest,
 } from '@breeztech/breez-sdk-spark-react-native';
 import type { Channel, ChannelState, Transaction } from '@/types/wallet';
@@ -34,6 +38,7 @@ export interface LightningInvoiceResult {
 import { documentDirectory } from 'expo-file-system/legacy';
 import { getMnemonic, getPassphrase } from './secureStorageService';
 import { ASYNC_KEYS } from '@constants/storage';
+import { detectPaymentType, type PaymentType as AppPaymentType } from '@utils/bitcoin';
 
 let sdkInstance: BreezSdkInterface | null = null;
 
@@ -720,7 +725,7 @@ export async function listTransactionsPage(params?: {
   };
 }
 
-function mapFeeRateToConfirmationSpeed(satPerVbyte: number): OnchainConfirmationSpeed {
+export function mapFeeRateToConfirmationSpeed(satPerVbyte: number): OnchainConfirmationSpeed {
   if (satPerVbyte <= 2) return OnchainConfirmationSpeed.Slow;
   if (satPerVbyte <= 10) return OnchainConfirmationSpeed.Medium;
   return OnchainConfirmationSpeed.Fast;
@@ -858,6 +863,104 @@ export async function sendLightningPayment(
   } catch (err) {
     throw new Error(mapSdkError(err, 'send lightning payment'));
   }
+}
+
+async function sendLnurlPayWithDetails(
+  payRequest: LnurlPayRequestDetails,
+  amountSats: number,
+): Promise<Payment> {
+  if (!sdkInstance) {
+    throw new Error('Wallet not initialized. Call initializeWallet() first.');
+  }
+
+  try {
+    const prepareResponse = await sdkInstance.prepareLnurlPay(
+      PrepareLnurlPayRequest.create({
+        amountSats: BigInt(amountSats),
+        payRequest,
+        comment: undefined,
+        validateSuccessActionUrl: undefined,
+        conversionOptions: undefined,
+        feePolicy: undefined,
+      }),
+    );
+
+    const lnPayResponse = await sdkInstance.lnurlPay(
+      LnurlPayRequest.create({
+        prepareResponse,
+        idempotencyKey: undefined,
+      }),
+    );
+
+    return lnPayResponse.payment;
+  } catch (err) {
+    throw new Error(mapSdkError(err, 'send LNURL payment'));
+  }
+}
+
+/**
+ * Sends a Lightning payment using the appropriate SDK path: BOLT11 for invoices,
+ * {@link BreezSdkInterface.parse} + LNURL-pay for LNURL and Lightning addresses.
+ */
+export async function sendLightningPaymentResolved(
+  rawInput: string,
+  amountSats: number,
+  hintType?: AppPaymentType,
+): Promise<Payment> {
+  const trimmed = rawInput.trim();
+  if (!trimmed) {
+    throw new Error('Enter a recipient, invoice, or payment link.');
+  }
+
+  const detected = detectPaymentType(trimmed);
+  const kind: AppPaymentType =
+    detected.type !== 'unknown'
+      ? detected.type
+      : hintType && hintType !== 'unknown'
+        ? hintType
+        : 'unknown';
+
+  if (kind === 'bitcoin_address') {
+    throw new Error('Bitcoin on-chain addresses cannot be sent from this screen. Use Withdraw instead.');
+  }
+
+  if (kind === 'unknown') {
+    throw new Error(
+      'Unrecognized payment format. Use a Lightning invoice (BOLT11), an LNURL-pay link, or a Lightning address.',
+    );
+  }
+
+  if (kind === 'lightning_invoice') {
+    const payReq = detected.normalizedValue || trimmed;
+    return sendLightningPayment(payReq, amountSats);
+  }
+
+  if (!sdkInstance) {
+    throw new Error('Wallet not initialized. Call initializeWallet() first.');
+  }
+
+  let parsed;
+  try {
+    parsed = await sdkInstance.parse(trimmed);
+  } catch (err) {
+    throw new Error(mapSdkError(err, 'resolve payment'));
+  }
+
+  if (InputType.LnurlPay.instanceOf(parsed)) {
+    return sendLnurlPayWithDetails(parsed.inner[0], amountSats);
+  }
+
+  if (InputType.LightningAddress.instanceOf(parsed)) {
+    return sendLnurlPayWithDetails(parsed.inner[0].payRequest, amountSats);
+  }
+
+  if (InputType.Bolt11Invoice.instanceOf(parsed)) {
+    return sendLightningPayment(parsed.inner[0].invoice.bolt11, amountSats);
+  }
+
+  throw new Error(
+    'This payment type is not supported for Send. Use a Lightning invoice, LNURL-pay, or Lightning address.',
+  );
 }
 
 export async function createLightningInvoice(
