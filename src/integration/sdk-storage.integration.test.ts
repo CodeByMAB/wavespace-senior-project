@@ -116,9 +116,9 @@ describe('integration: SDK init and AsyncStorage network', () => {
     expect(connect).toHaveBeenCalled();
   });
 
-  it('uses Regtest when AsyncStorage.getItem throws', async () => {
+  it('uses Mainnet when AsyncStorage.getItem throws (network is not read from storage)', async () => {
     hoisted.getItem.mockRejectedValue(new Error('unavailable'));
     await initializeWallet();
-    expect(defaultConfig).toHaveBeenCalledWith(Network.Regtest);
+    expect(defaultConfig).toHaveBeenCalledWith(Network.Mainnet);
   });
 });

@@ -63,23 +63,16 @@ export function WithdrawScreen() {
   const canWithdraw = normalizedAddress.length > 0 && isAddressValid && amountSats > 0;
   const networkMismatchWarning = useMemo(() => {
     if (!isAddressValid || lowerAddress.length === 0) return null;
-    const isMainnetAddress =
-      lowerAddress.startsWith('bc1') ||
-      lowerAddress.startsWith('1') ||
-      lowerAddress.startsWith('3');
     const isTestnetAddress =
       lowerAddress.startsWith('tb1') ||
       lowerAddress.startsWith('m') ||
       lowerAddress.startsWith('n') ||
       lowerAddress.startsWith('2');
-    if (state.network === 'mainnet' && isTestnetAddress) {
-      return 'This looks like a testnet address, but your wallet is on mainnet.';
-    }
-    if (state.network === 'testnet' && isMainnetAddress) {
-      return 'This looks like a mainnet address, but your wallet is on testnet.';
+    if (isTestnetAddress) {
+      return 'This looks like a testnet address. This wallet only sends on Bitcoin mainnet.';
     }
     return null;
-  }, [isAddressValid, lowerAddress, state.network]);
+  }, [isAddressValid, lowerAddress]);
 
   useEffect(() => {
     const scannedInput = route.params?.scannedPayload ?? route.params?.scannedAddress;
@@ -192,10 +185,7 @@ export function WithdrawScreen() {
 
   const handleOpenExplorer = async () => {
     if (!lastTxid) return;
-    const base =
-      state.network === 'mainnet'
-        ? 'https://mempool.space/tx/'
-        : 'https://mempool.space/testnet/tx/';
+    const base = 'https://mempool.space/tx/';
     await Linking.openURL(`${base}${lastTxid}`);
   };
 

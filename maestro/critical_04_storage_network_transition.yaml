@@ -1,4 +1,4 @@
-# Critical flow 4: persist network selection via Settings (storage + reconnect path in app).
+# Critical flow 4: app is mainnet-only; settings show fixed network (no switcher).
 appId: com.anonymous.wavespace
 ---
 - launchApp
@@ -8,10 +8,5 @@ appId: com.anonymous.wavespace
     commands:
       - tapOn: 'Settings'
       - extendedWaitUntil:
-          visible: 'Network'
+          visible: 'Bitcoin mainnet'
           timeout: 15000
-      - tapOn: 'Network'
-      - extendedWaitUntil:
-          visible: 'Mainnet'
-          timeout: 15000
-      - assertVisible: 'Testnet'

@@ -24,7 +24,11 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'src/**/*.integration.test.ts'],
+    include: [
+      'src/**/*.test.ts',
+      'src/**/*.integration.test.ts',
+      'wave_space_app/src/**/*.test.ts',
+    ],
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage',
@@ -35,11 +39,7 @@ export default defineConfig({
         'src/utils/**/*.ts',
         'src/constants/**/*.ts',
       ],
-      exclude: [
-        '**/*.test.ts',
-        '**/*.integration.test.ts',
-        'src/services/secureStorageService.ts',
-      ],
+      exclude: ['**/*.test.ts', '**/*.integration.test.ts'],
       thresholds: {
         lines: 80,
         statements: 80,

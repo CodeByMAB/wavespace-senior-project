@@ -1,18 +1,40 @@
-# Critical flow 3: open Send Payment when the home stack is active (after unlock).
+# Critical flow 3: Send payment lifecycle (requires funded testnet wallet + Breez).
+# Fails if the app is not wallet-ready (dashboard QuickActions or already on Send Payment).
 appId: com.anonymous.wavespace
 ---
 - launchApp
+# Precondition: unlocked wallet — Withdraw is a QuickActions label on the dashboard, or Send Payment modal is already open.
+- extendedWaitUntil:
+    visible: '.*(Send Payment|Withdraw).*'
+    timeout: 60000
 - runFlow:
     when:
-      visible: 'Send Payment'
+      notVisible: 'Send Payment'
     commands:
-      - assertVisible: 'Send Payment'
-- runFlow:
-    when:
-      visible: 'Send'
-    commands:
+      - assertVisible: 'Withdraw'
       - tapOn: 'Send'
       - extendedWaitUntil:
           visible: 'Send Payment'
           timeout: 15000
-      - assertVisible: 'Review Payment'
+- assertVisible: 'Send Payment'
+- tapOn: 'Invoice, LNURL, or Lightning address'
+- inputText: 'lntb12u1pjdmtr9pp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqpuaztrnpwqsp5ugu59hd3lqautylg7x93d7my67yqpjkfq6msu9fh3s647m30wnqqq05qqqqqqqsp5xcywhmzfjdhtn7h5h8ueqhl3cst80r5kmpthu2xxmgezfwkxygzqdmr2jkxp7l3ngyfqndpqzfau6puqd6l5dausvsxu9f2parnpqnrkvvphkl84aedc8rjd6l4dzunn6azp3'
+- tapOn: '0'
+- inputText: '100'
+- tapOn: 'Review Payment'
+- extendedWaitUntil:
+    visible: 'Confirm Payment'
+    timeout: 15000
+- tapOn: 'Confirm & Send'
+- extendedWaitUntil:
+    visible: 'OK'
+    timeout: 120000
+# Post-condition: success alert from SendScreen (not a stray OK elsewhere).
+- assertVisible: 'Payment Sent'
+- assertVisible: 'Your Lightning payment was successful.'
+- tapOn: 'OK'
+# Post-condition: returned to dashboard with QuickActions.
+- extendedWaitUntil:
+    visible: 'Withdraw'
+    timeout: 15000
+- assertVisible: 'Withdraw'

@@ -52,7 +52,7 @@ export function ReceiveScreen() {
     }
     if (openingFailAlertShown.current) return;
     openingFailAlertShown.current = true;
-    Alert.alert('Opening issue', receiveChannelOpening.message, [
+    Alert.alert('Receive setup', receiveChannelOpening.message, [
       {
         text: 'Retry',
         onPress: () => {
@@ -174,8 +174,8 @@ export function ReceiveScreen() {
                 {formatAmount(pendingInvoice.feeSats, settings.displayUnit)}
               </Text>
               <Text style={styles.feeBody}>
-                Your liquidity provider may charge this fee to receive this payment and
-                prepare inbound capacity. Confirm to show your invoice and QR code.
+                Your liquidity provider may charge this fee so you can receive this
+                payment over Lightning. Confirm to show your invoice and QR code.
               </Text>
             </Card>
             <Button title="Confirm and show invoice" onPress={confirmPendingInvoice} icon="checkmark" />
@@ -230,7 +230,7 @@ export function ReceiveScreen() {
 
             {receiveChannelOpening.status === 'opening' && (
               <Card variant="outline" padding="md">
-                <Text style={styles.openingTitle}>Channel opening</Text>
+                <Text style={styles.openingTitle}>Preparing Lightning</Text>
                 <Text style={styles.openingMessage}>{receiveChannelOpening.message}</Text>
                 {receiveChannelOpening.totalRounds > 0 ? (
                   <View style={styles.openingBar}>

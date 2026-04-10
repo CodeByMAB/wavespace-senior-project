@@ -98,6 +98,13 @@ export default function WelcomeScreen({navigation}: Props) {
               icon="download-outline"
               style={styles.secondaryBtn}
             />
+            <Button
+              title="Restore Encrypted Backup"
+              onPress={() => navigation.navigate('RestoreEncryptedBackup')}
+              variant="secondary"
+              icon="document-lock-outline"
+              style={styles.secondaryBtn}
+            />
           </View>
         </View>
       </View>

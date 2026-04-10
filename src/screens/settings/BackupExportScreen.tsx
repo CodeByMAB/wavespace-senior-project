@@ -25,6 +25,7 @@ import type { Transaction } from '@/types/wallet';
 import { Header } from '@components/common/Header';
 import { Button } from '@components/common/Button';
 import { Input } from '@components/common/Input';
+import { StepProgressBar } from '@components/common/StepProgressBar';
 import { MnemonicGrid } from '@components/onboarding/MnemonicGrid';
 import { getMnemonic } from '@services/secureStorageService';
 import { useSettings } from '@context/SettingsContext';
@@ -32,6 +33,24 @@ import { useWallet } from '@context/WalletContext';
 import { colors, spacing, typography } from '@theme/index';
 
 type Nav = NativeStackNavigationProp<SettingsStackParamList>;
+
+type ExportPhase = 'read' | 'derive' | 'encrypt' | 'write' | 'share';
+
+const EXPORT_PHASE_ORDER: ExportPhase[] = [
+  'read',
+  'derive',
+  'encrypt',
+  'write',
+  'share',
+];
+
+const EXPORT_PHASE_LABELS: Record<ExportPhase, string> = {
+  read: 'Reading wallet data…',
+  derive: 'Deriving encryption key (may take a moment)…',
+  encrypt: 'Encrypting backup…',
+  write: 'Saving backup file…',
+  share: 'Opening share sheet…',
+};
 
 const BACKUP_VERSION = 2;
 const PBKDF_ITERATIONS = 100_000;
@@ -83,6 +102,7 @@ export function BackupExportScreen() {
   const [exportPassword, setExportPassword] = useState('');
   const [exportConfirm, setExportConfirm] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [exportPhase, setExportPhase] = useState<ExportPhase | null>(null);
   const [includeTransactionHistory, setIncludeTransactionHistory] = useState(false);
 
   useEffect(() => {
@@ -118,6 +138,7 @@ export function BackupExportScreen() {
       return;
     }
     setExporting(true);
+    setExportPhase('read');
     try {
       const mnemonic = await getMnemonic();
       if (!mnemonic) {
@@ -126,6 +147,7 @@ export function BackupExportScreen() {
       }
 
       const salt = randomBytes(16);
+      setExportPhase('derive');
       const key = await deriveKeyFromPassword(exportPassword, salt);
 
       const inner: { mnemonic: string; transactions?: Transaction[] } = {
@@ -136,6 +158,7 @@ export function BackupExportScreen() {
       }
       const plaintext = JSON.stringify(inner);
 
+      setExportPhase('encrypt');
       const { nonceB64, ciphertextB64 } = encryptUtf8AesGcm(key, plaintext);
 
       const checksum = await Crypto.digestStringAsync(
@@ -170,23 +193,33 @@ export function BackupExportScreen() {
         return;
       }
       const uri = `${base}wavespace-backup-${Date.now()}.json`;
+      setExportPhase('write');
       await FileSystem.writeAsStringAsync(uri, json, {
         encoding: FileSystem.EncodingType.UTF8,
       });
 
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
-        Alert.alert('Sharing unavailable', 'Export file was written but sharing is not available.');
+        Alert.alert(
+          'Sharing unavailable',
+          'Your backup file was saved on this device, but sharing is not available. You can find it in the app cache from a file manager on some devices, or try again later.',
+        );
         return;
       }
+      setExportPhase('share');
       await Sharing.shareAsync(uri, {
         mimeType: 'application/json',
         dialogTitle: 'Encrypted backup',
       });
-    } catch {
-      Alert.alert('Export failed', 'Could not create or share the backup file.');
+    } catch (err) {
+      const detail =
+        err instanceof Error && err.message.trim().length > 0
+          ? err.message
+          : 'Could not create or share the backup file.';
+      Alert.alert('Export failed', detail);
     } finally {
       setExporting(false);
+      setExportPhase(null);
     }
   };
 
@@ -250,10 +283,23 @@ export function BackupExportScreen() {
           containerStyle={styles.inputBlock}
         />
         <Button
-          title={exporting ? 'Exporting…' : 'Export encrypted backup'}
+          title={exporting ? EXPORT_PHASE_LABELS[exportPhase ?? 'read'] : 'Export encrypted backup'}
           onPress={() => void runExport()}
           disabled={exporting}
         />
+
+        {exporting && exportPhase ? (
+          <View style={styles.exportProgress}>
+            <ActivityIndicator color={colors.primary} size="small" />
+            <View style={styles.exportProgressText}>
+              <StepProgressBar
+                currentStep={EXPORT_PHASE_ORDER.indexOf(exportPhase)}
+                totalSteps={EXPORT_PHASE_ORDER.length}
+                label={EXPORT_PHASE_LABELS[exportPhase]}
+              />
+            </View>
+          </View>
+        ) : null}
 
         <Modal
           visible={phraseModal}
@@ -322,6 +368,22 @@ const styles = StyleSheet.create({
   },
   spinner: {
     marginTop: spacing.md,
+  },
+  exportProgress: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  exportProgressText: {
+    flex: 1,
+    minWidth: 0,
+    paddingTop: 2,
   },
   modalBackdrop: {
     flex: 1,

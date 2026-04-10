@@ -15,7 +15,6 @@ type Nav = NativeStackNavigationProp<SettingsStackParamList>;
 const OPTIONS: { unit: DisplayUnit; label: string }[] = [
   { unit: 'sats', label: 'Sats' },
   { unit: 'btc', label: 'BTC' },
-  { unit: 'both', label: 'Both' },
 ];
 
 export function DisplayUnitsScreen() {

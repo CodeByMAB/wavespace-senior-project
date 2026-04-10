@@ -49,12 +49,6 @@ describe('formatters', () => {
     expect(formatAmount(100_000_000, 'btc')).toContain('BTC');
   });
 
-  it('formatAmount with both', () => {
-    const s = formatAmount(1000, 'both');
-    expect(s).toContain('sats');
-    expect(s).toContain('BTC');
-  });
-
   it('satsToFiat uses mocked BTC price', () => {
     expect(satsToFiat(100_000_000)).toBe('$50000.00');
   });

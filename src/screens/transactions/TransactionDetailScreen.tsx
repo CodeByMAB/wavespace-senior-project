@@ -57,10 +57,7 @@ export function TransactionDetailScreen() {
     tx.type === 'withdrawal' ||
     tx.type === 'pending_withdrawal';
   const statusColor = getStatusColor(tx.status);
-  const explorerBaseUrl =
-    state.network === 'mainnet'
-      ? 'https://mempool.space/tx/'
-      : 'https://mempool.space/testnet/tx/';
+  const explorerBaseUrl = 'https://mempool.space/tx/';
 
   const shareTransaction = async () => {
     const amountLine = `${isSent ? '-' : '+'}${formatAmount(tx.amountSats, settings.displayUnit)}`;

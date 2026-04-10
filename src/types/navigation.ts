@@ -1,4 +1,4 @@
-import type { Channel, Transaction } from './wallet';
+import type { Transaction } from './wallet';
 import type { PaymentType } from '@/utils/bitcoin';
 
 export type RootStackParamList = {
@@ -13,6 +13,7 @@ export type OnboardingStackParamList = {
   MnemonicDisplay: { mnemonic: string };
   MnemonicConfirm: { mnemonic: string };
   RestoreWallet: undefined;
+  RestoreEncryptedBackup: undefined;
   PinSetup: undefined;
   BiometricSetup: undefined;
 };
@@ -35,8 +36,6 @@ export type HomeStackParamList = {
   Receive: undefined;
   Withdraw: { scannedAddress?: string; scannedPayload?: string } | undefined;
   QRScanner: { returnScreen: 'Send' | 'Withdraw' };
-  ChannelList: undefined;
-  ChannelDetail: { channel: Channel };
   TransactionDetail: { transaction: Transaction };
 };
 
@@ -47,7 +46,6 @@ export type TransactionsStackParamList = {
 
 export type SettingsStackParamList = {
   SettingsMain: undefined;
-  NetworkSelection: undefined;
   DisplayUnits: undefined;
   SecuritySettings: undefined;
   ChangePIN: undefined;

@@ -10,6 +10,7 @@ import {Ionicons} from '@expo/vector-icons';
 import {useWallet} from '@context/WalletContext';
 import {useSettings} from '@context/SettingsContext';
 import {colors, spacing, typography} from '@theme/index';
+import type {DisplayUnit} from '@/types/wallet';
 import {formatAmount, satsToFiat} from '@utils/formatters';
 import {getBtcPriceUsd} from '@services/priceService';
 
@@ -19,7 +20,7 @@ export function BalanceCard() {
   const {state: settings, dispatch: settingsDispatch} = useSettings();
 
   const toggleUnit = () => {
-    const cycle: Array<'sats' | 'btc' | 'both'> = ['sats', 'btc', 'both'];
+    const cycle: DisplayUnit[] = ['sats', 'btc'];
     const i = cycle.indexOf(settings.displayUnit);
     const next = cycle[(i + 1) % cycle.length]!;
     settingsDispatch({
@@ -47,7 +48,7 @@ export function BalanceCard() {
         <View style={styles.networkBadge}>
           <View style={[styles.networkDot, {backgroundColor: networkDotColor}]} />
           <Text style={styles.networkText}>
-            {state.network === 'testnet' ? 'Testnet' : 'Mainnet'}
+            Mainnet
           </Text>
         </View>
       </View>

@@ -1,0 +1,36 @@
+# Critical flow 6: Receive payment — generate invoice, QR, and copy (requires funded testnet wallet + Breez).
+# Fails if the app is not wallet-ready (dashboard QuickActions or already on Receive Payment).
+appId: com.anonymous.wavespace
+---
+- launchApp
+# Precondition: unlocked wallet — Withdraw on dashboard, or Receive Payment modal already open.
+- extendedWaitUntil:
+    visible: '.*(Receive Payment|Withdraw).*'
+    timeout: 60000
+- runFlow:
+    when:
+      notVisible: 'Receive Payment'
+    commands:
+      - assertVisible: 'Withdraw'
+      - tapOn: 'Receive'
+      - extendedWaitUntil:
+          visible: 'Receive Payment'
+          timeout: 15000
+- assertVisible: 'Receive Payment'
+- tapOn: 'Generate Invoice'
+- extendedWaitUntil:
+    visible: 'Confirm and show invoice'
+    timeout: 60000
+- tapOn: 'Confirm and show invoice'
+- extendedWaitUntil:
+    visible: 'Scan to Pay'
+    timeout: 30000
+- assertVisible: 'Scan to Pay'
+- tapOn: 'Copy'
+- extendedWaitUntil:
+    visible: 'Copied!'
+    timeout: 5000
+# Post-condition: still on invoice/QR view after copy (Copy button becomes Copied!).
+- assertVisible: 'Scan to Pay'
+- assertVisible: 'Copied!'
+- assertVisible: 'Share'

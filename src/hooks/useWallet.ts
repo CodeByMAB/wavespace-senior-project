@@ -21,18 +21,9 @@ import {
   logWalletOperation,
   type NodeState,
 } from '@services/walletService';
-import { ASYNC_KEYS, nodeStateCacheKey } from '@constants/storage';
+import { nodeStateCacheKey } from '@constants/storage';
 import type { Channel, Transaction, ReceiveChannelOpeningState } from '@/types/wallet';
 import { getBtcPriceUsd } from '@services/priceService';
-
-async function readPersistedNetwork(): Promise<'mainnet' | 'testnet'> {
-  try {
-    const raw = await AsyncStorage.getItem(ASYNC_KEYS.NETWORK_SELECTION);
-    return raw === 'mainnet' ? 'mainnet' : 'testnet';
-  } catch {
-    return 'testnet';
-  }
-}
 
 interface WalletState {
   balanceSats: bigint | null;
@@ -56,8 +47,7 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000];
 
 export function useWallet(
   isAuthenticated: boolean,
-  networkReconnectNonce = 0,
-  onPaymentEvent?: (event: SdkEvent) => void
+  onPaymentEvent?: (event: SdkEvent) => void,
 ) {
   const [state, setState] = useState<WalletState>(INITIAL_STATE);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -118,8 +108,8 @@ export function useWallet(
       setReceiveChannelOpening({
         status: 'opening',
         message: isOptimizing
-          ? 'Preparing inbound liquidity…'
-          : 'Syncing channel state…',
+          ? 'Preparing to receive payments…'
+          : 'Syncing with the network…',
         currentRound: p.currentRound,
         totalRounds: p.totalRounds,
         isOptimizing,
@@ -169,6 +159,11 @@ export function useWallet(
       const ns = await getNodeState();
       setState((prev) => ({
         ...prev,
+        /**
+         * Spark may not emit `Synced` on every session/network; once `getInfo` succeeds we have
+         * a usable snapshot, so clear the endless “Syncing…” state.
+         */
+        isSynced: true,
         balanceSats: ns.balanceSats,
         nodeState: {
           ...ns,
@@ -186,8 +181,7 @@ export function useWallet(
         inboundLiquiditySats: ns.inboundLiquiditySats.toString(),
         outboundLiquiditySats: ns.outboundLiquiditySats.toString(),
       };
-      const cacheKey = nodeStateCacheKey(ns.network);
-      AsyncStorage.setItem(cacheKey, JSON.stringify(toCache)).catch(() => {});
+      AsyncStorage.setItem(nodeStateCacheKey(), JSON.stringify(toCache)).catch(() => {});
     } catch (err) {
       logWalletOperation({ operation: 'refreshNodeState', error: err });
     }
@@ -248,15 +242,14 @@ export function useWallet(
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
       setChannelsHydrated(false);
 
-      // Bootstrap UI with the last-known node state for the *persisted* network only.
+      // Bootstrap UI with the last-known mainnet node state when available.
       try {
-        const persistedNet = await readPersistedNetwork();
         if (session !== sessionRef.current) return;
-        const cached = await AsyncStorage.getItem(nodeStateCacheKey(persistedNet));
+        const cached = await AsyncStorage.getItem(nodeStateCacheKey());
         if (cached && session === sessionRef.current) {
           const parsed = JSON.parse(cached) as Record<string, string | null>;
-          const cachedNetwork = (parsed.network as NodeState['network']) ?? 'testnet';
-          if (cachedNetwork === persistedNet) {
+          const cachedNetwork = (parsed.network as NodeState['network']) ?? 'mainnet';
+          if (cachedNetwork === 'mainnet') {
             setState((prev) => ({
               ...prev,
               nodeState: {
@@ -394,7 +387,7 @@ export function useWallet(
                 setReceiveChannelOpening({
                   status: 'failed',
                   message:
-                    'Inbound payment or channel setup did not complete. You can generate a new invoice and try again.',
+                    'This payment did not complete. You can create a new invoice and try again.',
                 });
               }
               onPaymentEventRef.current?.(event);
@@ -471,7 +464,6 @@ export function useWallet(
     };
   }, [
     isAuthenticated,
-    networkReconnectNonce,
     appStateNonce,
     refreshBalance,
     refreshNodeState,

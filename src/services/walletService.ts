@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import {
   connect,
@@ -37,7 +36,6 @@ export interface LightningInvoiceResult {
 }
 import { documentDirectory } from 'expo-file-system/legacy';
 import { getMnemonic, getPassphrase } from './secureStorageService';
-import { ASYNC_KEYS } from '@constants/storage';
 import { detectPaymentType, type PaymentType as AppPaymentType } from '@utils/bitcoin';
 
 let sdkInstance: BreezSdkInterface | null = null;
@@ -76,10 +74,10 @@ export interface NodeState {
   outboundLiquiditySats: bigint;
   /** Unix timestamp (ms) of the last Synced event, or null if not yet synced. */
   lastSyncedAt: number | null;
-  network: 'mainnet' | 'testnet';
+  network: 'mainnet';
 }
 
-/** Network of the active SDK session (not the persisted settings toggle). Cleared on disconnect. */
+/** Network of the active SDK session. Cleared on disconnect. */
 let connectedSessionNetwork: NodeState['network'] | null = null;
 
 // ─── Error Mapping ───────────────────────────────────────────────────────────
@@ -209,23 +207,6 @@ export function logWalletOperation(params: {
   }
 }
 
-// ─── Network Resolution ──────────────────────────────────────────────────────
-
-/**
- * Reads the persisted network selection and maps it to a Breez SDK Network
- * value. Falls back to testnet (Regtest) for unknown, missing, or read-failure cases.
- */
-async function resolveNetwork(): Promise<Network> {
-  try {
-    const stored = await AsyncStorage.getItem(ASYNC_KEYS.NETWORK_SELECTION);
-    if (stored === 'mainnet') return Network.Mainnet;
-    if (stored === 'testnet') return Network.Regtest;
-    return Network.Regtest;
-  } catch {
-    return Network.Regtest;
-  }
-}
-
 // ─── SDK Lifecycle ───────────────────────────────────────────────────────────
 
 /**
@@ -238,7 +219,7 @@ export function getWalletInstance(): BreezSdkInterface | null {
 
 /**
  * Derives wallet keys from the stored mnemonic + passphrase and connects to
- * the Breez Spark network on the persisted network selection, starting the
+ * the Breez Spark network on Bitcoin mainnet, starting the
  * initial balance/history sync.
  *
  * @throws if the mnemonic is missing or SDK connection fails.
@@ -260,8 +241,7 @@ export async function initializeWallet(): Promise<BreezSdkInterface> {
     passphrase: passphrase ?? undefined,
   });
 
-  const network = await resolveNetwork();
-  const config = buildSdkConfig(network);
+  const config = buildSdkConfig(Network.Mainnet);
 
   const docDir = (documentDirectory ?? '').replace(/^file:\/\//, '');
   if (!docDir) {
@@ -272,7 +252,7 @@ export async function initializeWallet(): Promise<BreezSdkInterface> {
   const storageDir = `${docDir}breez-sdk`;
 
   sdkInstance = await connect({ config, seed, storageDir });
-  connectedSessionNetwork = network === Network.Regtest ? 'testnet' : 'mainnet';
+  connectedSessionNetwork = 'mainnet';
 
   logWalletOperation({
     operation: 'initializeWallet',
@@ -366,7 +346,7 @@ export async function getNodeState(): Promise<Omit<NodeState, 'lastSyncedAt'>> {
     pendingSendSats,
     inboundLiquiditySats: pendingReceiveSats,
     outboundLiquiditySats: info.balanceSats,
-    network: connectedSessionNetwork ?? 'testnet',
+    network: connectedSessionNetwork ?? 'mainnet',
   };
 }
 
@@ -743,6 +723,136 @@ function readQuotedFeeSats(prepareResponse: Awaited<ReturnType<BreezSdkInterface
   return Number(quote.speedFast.userFeeSat);
 }
 
+/**
+ * Sum of Lightning + Spark transfer fees from a prepare-send quote (BOLT11 / Spark invoice paths).
+ */
+function feeSatsFromPrepareSendLightning(
+  response: Awaited<ReturnType<BreezSdkInterface['prepareSendPayment']>>,
+): number {
+  const pm = response.paymentMethod;
+  if (pm.tag === SendPaymentMethod_Tags.Bolt11Invoice) {
+    const ln = Number(pm.inner.lightningFeeSats);
+    const spark =
+      pm.inner.sparkTransferFeeSats !== undefined && pm.inner.sparkTransferFeeSats !== null
+        ? Number(pm.inner.sparkTransferFeeSats)
+        : 0;
+    const sum = (Number.isFinite(ln) ? ln : 0) + (Number.isFinite(spark) ? spark : 0);
+    return Math.max(0, Math.floor(sum));
+  }
+  if (pm.tag === SendPaymentMethod_Tags.SparkAddress) {
+    return Math.max(0, Math.floor(Number(pm.inner.fee)));
+  }
+  if (pm.tag === SendPaymentMethod_Tags.SparkInvoice) {
+    return Math.max(0, Math.floor(Number(pm.inner.fee)));
+  }
+  return 0;
+}
+
+/**
+ * Returns the wallet SDK fee quote for a Lightning send, or null if the input is not a supported
+ * Lightning destination or the quote cannot be fetched.
+ */
+export async function estimateLightningSendFee(
+  rawInput: string,
+  amountSats: number,
+  hintType?: AppPaymentType,
+): Promise<number | null> {
+  if (!sdkInstance) {
+    return null;
+  }
+
+  const trimmed = rawInput.trim();
+  if (!trimmed || !Number.isFinite(amountSats) || amountSats <= 0) {
+    return null;
+  }
+
+  const detected = detectPaymentType(trimmed);
+  const kind: AppPaymentType =
+    detected.type !== 'unknown'
+      ? detected.type
+      : hintType && hintType !== 'unknown'
+        ? hintType
+        : 'unknown';
+
+  if (kind === 'bitcoin_address' || kind === 'unknown') {
+    return null;
+  }
+
+  const amountArg = BigInt(Math.floor(amountSats));
+
+  try {
+    if (kind === 'lightning_invoice') {
+      const payReq = detected.normalizedValue || trimmed;
+      const prepareResponse = await sdkInstance.prepareSendPayment(
+        PrepareSendPaymentRequest.create({
+          paymentRequest: payReq,
+          amount: amountArg,
+          tokenIdentifier: undefined,
+          conversionOptions: undefined,
+          feePolicy: undefined,
+        }),
+      );
+      return feeSatsFromPrepareSendLightning(prepareResponse);
+    }
+
+    let parsed;
+    try {
+      parsed = await sdkInstance.parse(trimmed);
+    } catch {
+      return null;
+    }
+
+    if (InputType.LnurlPay.instanceOf(parsed)) {
+      const prep = await sdkInstance.prepareLnurlPay(
+        PrepareLnurlPayRequest.create({
+          amountSats: amountArg,
+          payRequest: parsed.inner[0],
+          comment: undefined,
+          validateSuccessActionUrl: undefined,
+          conversionOptions: undefined,
+          feePolicy: undefined,
+        }),
+      );
+      const lnurlFee = Number(prep.feeSats);
+      if (!Number.isFinite(lnurlFee)) return null;
+      return Math.max(0, Math.floor(lnurlFee));
+    }
+
+    if (InputType.LightningAddress.instanceOf(parsed)) {
+      const prep = await sdkInstance.prepareLnurlPay(
+        PrepareLnurlPayRequest.create({
+          amountSats: amountArg,
+          payRequest: parsed.inner[0].payRequest,
+          comment: undefined,
+          validateSuccessActionUrl: undefined,
+          conversionOptions: undefined,
+          feePolicy: undefined,
+        }),
+      );
+      const addrFee = Number(prep.feeSats);
+      if (!Number.isFinite(addrFee)) return null;
+      return Math.max(0, Math.floor(addrFee));
+    }
+
+    if (InputType.Bolt11Invoice.instanceOf(parsed)) {
+      const prepareResponse = await sdkInstance.prepareSendPayment(
+        PrepareSendPaymentRequest.create({
+          paymentRequest: parsed.inner[0].invoice.bolt11,
+          amount: amountArg,
+          tokenIdentifier: undefined,
+          conversionOptions: undefined,
+          feePolicy: undefined,
+        }),
+      );
+      return feeSatsFromPrepareSendLightning(prepareResponse);
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function estimateWithdrawalFee(
   address: string,
   amountSats: number,
@@ -971,16 +1081,19 @@ export async function createLightningInvoice(
     throw new Error('Wallet not initialized. Call initializeWallet() first.');
   }
 
+  const amountSatsSafe =
+    Number.isFinite(amountSats) && amountSats > 0 ? BigInt(Math.floor(amountSats)) : undefined;
+
   try {
     const response = await sdkInstance.receivePayment(
       ReceivePaymentRequest.create({
-        method: ReceivePaymentMethod.Bolt11Invoice.new({
+        paymentMethod: ReceivePaymentMethod.Bolt11Invoice.new({
           description: description ?? '',
-          amountSats: BigInt(amountSats),
+          amountSats: amountSatsSafe,
           expirySecs: undefined,
           paymentHash: undefined,
         }),
-      } as any),
+      }),
     );
 
     const pr = response.paymentRequest?.trim();

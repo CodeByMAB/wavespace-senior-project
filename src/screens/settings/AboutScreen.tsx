@@ -15,8 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SettingsStackParamList } from '@/types/navigation';
 import { Header } from '@components/common/Header';
 import { CopyableText } from '@components/common/CopyableText';
-import { useSettings } from '@context/SettingsContext';
 import { useWallet } from '@context/WalletContext';
+import { useMainnetTipHeight } from '@hooks/useMainnetTipHeight';
 import { colors, spacing } from '@theme/index';
 
 type Nav = NativeStackNavigationProp<SettingsStackParamList>;
@@ -30,10 +30,15 @@ const PRIVACY_URL = 'https://breez.technology/privacy';
 export function AboutScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const { state: settings } = useSettings();
   const { state: walletState } = useWallet();
+  const { height: tipHeight, loading: tipLoading } = useMainnetTipHeight();
 
   const appVersion = Constants.expoConfig?.version ?? '—';
+  const blockHeightLabel = tipLoading
+    ? '…'
+    : tipHeight != null
+      ? tipHeight.toLocaleString('en-US')
+      : '—';
 
   const open = (url: string) => {
     void Linking.openURL(url);
@@ -71,9 +76,7 @@ export function AboutScreen() {
               <Ionicons name="globe-outline" size={20} color={colors.textTertiary} />
               <Text style={styles.rowLabel}>Network</Text>
             </View>
-            <Text style={styles.rowValue}>
-              {settings.network === 'mainnet' ? 'Mainnet' : 'Testnet'}
-            </Text>
+            <Text style={styles.rowValue}>Bitcoin mainnet</Text>
           </View>
           <View style={styles.separator} />
           <View style={styles.row}>
@@ -81,7 +84,7 @@ export function AboutScreen() {
               <Ionicons name="git-network-outline" size={20} color={colors.textTertiary} />
               <Text style={styles.rowLabel}>Block height</Text>
             </View>
-            <Text style={styles.rowValue}>{walletState.blockHeight}</Text>
+            <Text style={styles.rowValue}>{blockHeightLabel}</Text>
           </View>
         </View>
 

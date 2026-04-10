@@ -3,7 +3,6 @@ import React, {
   useContext,
   useReducer,
   useMemo,
-  useState,
   useCallback,
   ReactNode,
 } from 'react';
@@ -28,7 +27,7 @@ import { useWallet as useWalletSdk } from '@hooks/useWallet';
 import { formatAmount } from '@utils/formatters';
 import {
   createLightningInvoice,
-  disconnectWallet,
+  estimateLightningSendFee as estimateLightningSendFeeService,
   estimateWithdrawalFee as estimateWithdrawalFeeService,
   executeWithdrawal,
   mapPaymentToTransaction,
@@ -48,7 +47,6 @@ type WalletAction =
   | { type: 'ADD_TRANSACTION'; payload: Transaction }
   | { type: 'SET_CHANNELS'; payload: Channel[] }
   | { type: 'SET_DISPLAY_UNIT'; payload: DisplayUnit }
-  | { type: 'SET_NETWORK'; payload: Network }
   | { type: 'SET_SYNCING'; payload: boolean }
   | { type: 'RESET_WALLET' };
 
@@ -67,10 +65,9 @@ const initialState: WalletState = {
   balance: emptyBalance,
   transactions: [],
   channels: [],
-  network: 'testnet',
+  network: 'mainnet',
   displayUnit: 'sats',
   nodeId: '',
-  blockHeight: 0,
   isSyncing: false,
 };
 
@@ -90,8 +87,6 @@ function walletReducer(state: WalletState, action: WalletAction): WalletState {
       return { ...state, channels: action.payload };
     case 'SET_DISPLAY_UNIT':
       return { ...state, displayUnit: action.payload };
-    case 'SET_NETWORK':
-      return { ...state, network: action.payload };
     case 'SET_SYNCING':
       return { ...state, isSyncing: action.payload };
     case 'RESET_WALLET':
@@ -159,7 +154,7 @@ function mergeSdkIntoWalletState(
     isSyncing,
     nodeId: ns?.identityPubkey ?? base.nodeId,
     /** Reflects the active SDK session only (cached node state while offline). */
-    network: (ns?.network as Network) ?? 'testnet',
+    network: (ns?.network as Network) ?? 'mainnet',
   };
 }
 
@@ -171,14 +166,17 @@ interface WalletContextType {
   receiveChannelOpening: ReceiveChannelOpeningState;
   startReceiveChannelOpeningMonitor: () => void;
   stopReceiveChannelOpeningMonitor: () => void;
-  /** Tears down the SDK, then reconnects so the next session uses the persisted network (e.g. after settings). */
-  reconnectAfterNetworkChange: () => Promise<void>;
   sendPayment: (
     recipient: string,
     amountSats: number,
     paymentTypeHint?: AppPaymentType,
   ) => Promise<void>;
   createInvoice: (amountSats: number, description?: string) => Promise<LightningInvoiceResult>;
+  estimateLightningSendFee: (
+    recipient: string,
+    amountSats: number,
+    paymentTypeHint?: AppPaymentType,
+  ) => Promise<number | null>;
   withdrawOnchain: (address: string, amountSats: number, feeRate: number) => Promise<string>;
   estimateWithdrawalFee: (
     address: string,
@@ -200,7 +198,6 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuthContext();
   const { state: settings } = useSettings();
-  const [networkReconnectNonce, setNetworkReconnectNonce] = useState(0);
 
   const onPaymentEvent = useCallback((event: SdkEvent) => {
     switch (event.tag) {
@@ -235,13 +232,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [settings.displayUnit]);
 
-  const sdk = useWalletSdk(isAuthenticated, networkReconnectNonce, onPaymentEvent);
+  const sdk = useWalletSdk(isAuthenticated, onPaymentEvent);
   const [state, dispatch] = useReducer(walletReducer, initialState);
-
-  const reconnectAfterNetworkChange = useCallback(async () => {
-    await disconnectWallet();
-    setNetworkReconnectNonce((n) => n + 1);
-  }, []);
 
   const mergedState = useMemo(
     () =>
@@ -286,6 +278,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     return createLightningInvoice(amountSats, description);
   };
 
+  const estimateLightningSendFee = useCallback(
+    async (recipient: string, amountSats: number, paymentTypeHint?: AppPaymentType) => {
+      return estimateLightningSendFeeService(recipient, amountSats, paymentTypeHint);
+    },
+    [],
+  );
+
   const estimateWithdrawalFee = async (
     address: string,
     amountSats: number,
@@ -315,9 +314,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         receiveChannelOpening: sdk.receiveChannelOpening,
         startReceiveChannelOpeningMonitor: sdk.startReceiveChannelOpeningMonitor,
         stopReceiveChannelOpeningMonitor: sdk.stopReceiveChannelOpeningMonitor,
-        reconnectAfterNetworkChange,
         sendPayment,
         createInvoice,
+        estimateLightningSendFee,
         withdrawOnchain,
         estimateWithdrawalFee,
         validateWithdrawalAddress,

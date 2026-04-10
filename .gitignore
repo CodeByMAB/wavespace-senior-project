@@ -40,6 +40,9 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .DS_Store
 *.pem
 
+# Play Console / EAS submit (never commit)
+google-service-account.json
+
 # Local env files
 .env
 .env*.local

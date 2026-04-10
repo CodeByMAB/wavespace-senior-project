@@ -26,6 +26,15 @@ Use this checklist for manual and automated security review sign-off. Store comp
 - [ ] Dependencies reviewed for known advisories (`npm audit`) before release.
 - [ ] Native modules (Breez SDK, Expo) pinned to audited versions in `package.json`.
 
+## Sign-off process (coverage)
+
+After `npm run test:coverage` passes in CI (or locally with the same thresholds as `vitest.config.ts`):
+
+1. Copy `qa/reports/coverage-signoff-template.json` to `qa/reports/coverage-signoff-<YYYY-MM-DD>.json` (use the review date).
+2. Fill in `buildOrTag`, `date`, `reviewer`, and `vitest.overallLinesPct` from `coverage/coverage-summary.json` (total lines percent).
+3. Set `vitest.thresholdsMet` to `true` when coverage thresholds are satisfied; set `approval.approved` to `true` and add brief `approval.comments` if anything was waived or scoped.
+4. Commit the dated JSON under `qa/reports/` with the release or QA milestone, or attach it as a CI artifact named per `coverage-signoff-template.json` → `artifacts.ciArtifactName`.
+
 ## Sign-off
 
 | Field        | Value |

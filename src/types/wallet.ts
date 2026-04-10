@@ -1,6 +1,7 @@
 // --- Display / unit types ---
-export type DisplayUnit = 'sats' | 'btc' | 'both';
-export type Network = 'testnet' | 'mainnet';
+export type DisplayUnit = 'sats' | 'btc';
+/** Bitcoin mainnet only; testnet is not supported. */
+export type Network = 'mainnet';
 export type FeeRate = 'slow' | 'medium' | 'fast';
 export type FeeSpeed = 'low' | 'medium' | 'high';
 
@@ -93,7 +94,6 @@ export interface WalletState {
   network: Network;
   displayUnit: DisplayUnit;
   nodeId: string;
-  blockHeight: number;
   isSyncing: boolean;
 }
 

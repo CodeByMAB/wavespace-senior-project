@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   Switch,
   StyleSheet,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useNavigation} from '@react-navigation/native';
@@ -14,51 +16,71 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import type {SettingsStackParamList} from '@/types/navigation';
-import type {DisplayUnit, Network} from '@/types/wallet';
+import type {DisplayUnit} from '@/types/wallet';
 import {useSettings} from '@context/SettingsContext';
 import {useAuthContext} from '@context/AuthContext';
 import {Button} from '@components/common/Button';
 import {CopyableText} from '@components/common/CopyableText';
+import {StepProgressBar} from '@components/common/StepProgressBar';
 import {useWallet} from '@context/WalletContext';
+import {useMainnetTipHeight} from '@hooks/useMainnetTipHeight';
 import {deleteMnemonic} from '@services/secureStorageService';
 import {disconnectWallet} from '@services/walletService';
 import {colors, spacing} from '@theme/index';
 
 type Nav = NativeStackNavigationProp<SettingsStackParamList>;
 
+const RESET_STEPS = [
+  'Removing wallet secrets…',
+  'Disconnecting Lightning…',
+  'Clearing local data…',
+  'Signing out…',
+] as const;
+
 export function SettingsScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const {state: settings, dispatch: settingsDispatch} = useSettings();
   const {state: walletState} = useWallet();
+  const {height: tipHeight, loading: tipLoading} = useMainnetTipHeight();
   const {logout} = useAuthContext();
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetStepIndex, setResetStepIndex] = useState(0);
 
-  const handleNetworkChange = (network: Network) => {
-    Alert.alert(
-      'Switch Network',
-      `Are you sure you want to switch to ${network}? This will require a wallet restart.`,
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Switch',
-          onPress: () => settingsDispatch({type: 'SET_NETWORK', payload: network}),
-        },
-      ],
-    );
-  };
+  const blockHeightLabel = tipLoading
+    ? '…'
+    : tipHeight != null
+      ? tipHeight.toLocaleString('en-US')
+      : '—';
 
   const runResetWallet = async () => {
+    setResetModalVisible(true);
+    setResetStepIndex(0);
     try {
       await deleteMnemonic();
+      setResetStepIndex(1);
       await disconnectWallet();
+      setResetStepIndex(2);
       await AsyncStorage.clear();
+      setResetStepIndex(3);
       logout();
-    } catch {
-      Alert.alert('Error', 'Could not reset wallet completely. Try again.');
+    } catch (err) {
+      const detail =
+        err instanceof Error && err.message.trim().length > 0
+          ? err.message
+          : 'An unexpected error occurred.';
+      Alert.alert(
+        'Reset failed',
+        `${detail}\n\nIf this keeps happening, try again or contact support.`,
+      );
+    } finally {
+      setResetModalVisible(false);
+      setResetStepIndex(0);
     }
   };
 
   return (
+    <>
     <ScrollView
       style={styles.container}
       contentContainerStyle={{
@@ -76,36 +98,7 @@ export function SettingsScreen() {
             <Ionicons name="globe-outline" size={20} color={colors.textTertiary} />
             <Text style={styles.rowLabel}>Network</Text>
           </View>
-          <View style={styles.segmentedControl}>
-            <TouchableOpacity
-              style={[
-                styles.segment,
-                settings.network === 'testnet' && styles.segmentActive,
-              ]}
-              onPress={() => handleNetworkChange('testnet')}>
-              <Text
-                style={[
-                  styles.segmentText,
-                  settings.network === 'testnet' && styles.segmentTextActive,
-                ]}>
-                Testnet
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.segment,
-                settings.network === 'mainnet' && styles.segmentActive,
-              ]}
-              onPress={() => handleNetworkChange('mainnet')}>
-              <Text
-                style={[
-                  styles.segmentText,
-                  settings.network === 'mainnet' && styles.segmentTextActive,
-                ]}>
-                Mainnet
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.rowValue}>Bitcoin mainnet</Text>
         </View>
       </View>
 
@@ -241,7 +234,7 @@ export function SettingsScreen() {
             <Ionicons name="cube-outline" size={20} color={colors.textTertiary} />
             <Text style={styles.rowLabel}>Block Height</Text>
           </View>
-          <Text style={styles.rowValue}>{walletState.blockHeight}</Text>
+          <Text style={styles.rowValue}>{blockHeightLabel}</Text>
         </View>
       </View>
 
@@ -270,6 +263,27 @@ export function SettingsScreen() {
         />
       </View>
     </ScrollView>
+
+    <Modal
+      visible={resetModalVisible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent>
+      <View style={styles.resetModalBackdrop}>
+        <View style={styles.resetModalCard}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <View style={styles.resetModalProgress}>
+            <StepProgressBar
+              currentStep={resetStepIndex}
+              totalSteps={RESET_STEPS.length}
+              label={RESET_STEPS[resetStepIndex] ?? RESET_STEPS[0]}
+            />
+          </View>
+          <Text style={styles.resetModalHint}>Do not close the app.</Text>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -355,5 +369,31 @@ const styles = StyleSheet.create({
   resetBtn: {
     borderColor: colors.error,
     borderRadius: 50,
+  },
+  resetModalBackdrop: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  resetModalCard: {
+    backgroundColor: colors.background,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xxl,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    gap: spacing.lg,
+  },
+  resetModalProgress: {
+    alignSelf: 'stretch',
+  },
+  resetModalHint: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    textAlign: 'center',
   },
 });

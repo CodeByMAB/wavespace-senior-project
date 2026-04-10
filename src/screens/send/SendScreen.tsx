@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -20,7 +21,7 @@ import {useWallet} from '@context/WalletContext';
 import {useSettings} from '@context/SettingsContext';
 import {colors, spacing, typography, borderRadius} from '@theme/index';
 import {formatAmount, satsToFiat} from '@utils/formatters';
-import {detectPaymentType} from '@utils/bitcoin';
+import {detectPaymentType, type PaymentType as AppPaymentType} from '@utils/bitcoin';
 import type {HomeStackParamList} from '@/types/navigation';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'Send'>;
@@ -30,13 +31,15 @@ export function SendScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<SendRoute>();
   const insets = useSafeAreaInsets();
-  const {sendPayment} = useWallet();
+  const {sendPayment, estimateLightningSendFee} = useWallet();
   const {state: settings} = useSettings();
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [unit, setUnit] = useState<'sats' | 'btc'>('sats');
+  const [feeEstimateSats, setFeeEstimateSats] = useState<number | null>(null);
+  const [feeLoading, setFeeLoading] = useState(false);
 
   useEffect(() => {
     const p = route.params;
@@ -62,9 +65,44 @@ export function SendScreen() {
     unit === 'sats'
       ? parseInt(amount || '0', 10)
       : Math.round(parseFloat(amount || '0') * 100_000_000);
-  const estimatedFee = Math.max(1, Math.floor(amountSats * 0.001));
 
   const canSend = recipient.length > 0 && amountSats > 0;
+
+  const paymentTypeHint = useMemo((): AppPaymentType | undefined => {
+    const detected = detectPaymentType(recipient);
+    if (detected.type !== 'unknown') return detected.type;
+    return route.params?.paymentType;
+  }, [recipient, route.params?.paymentType]);
+
+  useEffect(() => {
+    if (!canSend) {
+      setFeeEstimateSats(null);
+      setFeeLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        setFeeLoading(true);
+        try {
+          const fee = await estimateLightningSendFee(recipient, amountSats, paymentTypeHint);
+          if (!cancelled) {
+            setFeeEstimateSats(fee);
+          }
+        } finally {
+          if (!cancelled) {
+            setFeeLoading(false);
+          }
+        }
+      })();
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [recipient, amountSats, canSend, estimateLightningSendFee, paymentTypeHint]);
 
   const handleConfirmSend = async () => {
     setLoading(true);
@@ -162,15 +200,27 @@ export function SendScreen() {
             <Text style={styles.detailValue}>Lightning</Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Estimated Fee</Text>
-            <Text style={styles.detailValue}>
-              ~{formatAmount(estimatedFee, settings.displayUnit)}
-            </Text>
+            <Text style={styles.detailLabel}>Network fee</Text>
+            <View style={styles.feeValueWrap}>
+              {feeLoading ? (
+                <ActivityIndicator size="small" color={colors.textTertiary} />
+              ) : (
+                <Text style={styles.detailValue}>
+                  {feeEstimateSats !== null
+                    ? formatAmount(feeEstimateSats, settings.displayUnit)
+                    : '—'}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={[styles.detailRow, {borderBottomWidth: 0}]}>
             <Text style={styles.detailLabel}>Total</Text>
             <Text style={[styles.detailValue, {fontWeight: '700'}]}>
-              {formatAmount(amountSats + estimatedFee, settings.displayUnit)}
+              {feeLoading
+                ? '…'
+                : feeEstimateSats !== null
+                  ? formatAmount(amountSats + feeEstimateSats, settings.displayUnit)
+                  : `${formatAmount(amountSats, settings.displayUnit)} + fees`}
             </Text>
           </View>
         </Card>
@@ -200,15 +250,25 @@ export function SendScreen() {
           </Text>
         </View>
         <View style={styles.sheetDetail}>
-          <Text style={styles.detailLabel}>Fee</Text>
-          <Text style={styles.detailValue}>
-            ~{formatAmount(estimatedFee, settings.displayUnit)}
-          </Text>
+          <Text style={styles.detailLabel}>Network fee</Text>
+          {feeLoading ? (
+            <ActivityIndicator size="small" color={colors.textTertiary} />
+          ) : (
+            <Text style={styles.detailValue}>
+              {feeEstimateSats !== null
+                ? formatAmount(feeEstimateSats, settings.displayUnit)
+                : '—'}
+            </Text>
+          )}
         </View>
         <View style={styles.sheetDetail}>
           <Text style={styles.detailLabel}>Total</Text>
           <Text style={[styles.detailValue, {color: colors.primary}]}>
-            {formatAmount(amountSats + estimatedFee, settings.displayUnit)}
+            {feeLoading
+              ? '…'
+              : feeEstimateSats !== null
+                ? formatAmount(amountSats + feeEstimateSats, settings.displayUnit)
+                : `${formatAmount(amountSats, settings.displayUnit)} + fees`}
           </Text>
         </View>
         <View style={{gap: spacing.sm, marginTop: spacing.lg}}>
@@ -278,6 +338,11 @@ const styles = StyleSheet.create({
     ...typography.bodyMedium,
     color: colors.textPrimary,
     fontWeight: '500',
+  },
+  feeValueWrap: {
+    minHeight: 22,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
   },
   warningText: {
     ...typography.bodySmall,

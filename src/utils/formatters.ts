@@ -21,9 +21,6 @@ export function formatAmount(sats: number, unit: DisplayUnit): string {
   if (unit === 'btc') {
     return `${formatBtc(sats)} BTC`;
   }
-  if (unit === 'both') {
-    return `${formatSats(sats)} sats (${formatBtc(sats)} BTC)`;
-  }
   return `${formatSats(sats)} sats`;
 }
 

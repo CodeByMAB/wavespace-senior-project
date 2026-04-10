@@ -6,7 +6,7 @@
   "vitest": {
     "command": "npm run test:coverage",
     "overallLinesPct": null,
-    "businessLogicScopeNote": "Thresholds enforced on src/services, src/utils, src/constants (secureStorageService excluded from denominator; see vitest.config.ts).",
+    "businessLogicScopeNote": "Thresholds enforced on src/services, src/utils, src/constants (including secureStorageService; see vitest.config.ts).",
     "thresholdsMet": null
   },
   "artifacts": {

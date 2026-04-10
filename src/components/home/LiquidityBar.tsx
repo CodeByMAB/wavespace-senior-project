@@ -23,12 +23,12 @@ export function LiquidityBar() {
       <View style={styles.container}>
         <View style={styles.item}>
           <Text style={styles.value}>{formatSats(inboundLiquiditySats)}</Text>
-          <Text style={styles.label}>Inbound</Text>
+          <Text style={styles.label}>Can receive</Text>
         </View>
         <View style={styles.separator} />
         <View style={styles.item}>
           <Text style={styles.value}>{formatSats(outboundLiquiditySats)}</Text>
-          <Text style={styles.label}>Outbound</Text>
+          <Text style={styles.label}>Can send</Text>
         </View>
         <View style={styles.separator} />
         <View style={styles.item}>

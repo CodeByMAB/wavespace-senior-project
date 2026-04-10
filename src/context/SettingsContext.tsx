@@ -34,7 +34,7 @@ type SettingsAction =
 
 const initialSettings: SettingsState = {
   displayUnit: 'sats',
-  network: 'testnet',
+  network: 'mainnet',
   biometricsEnabled: false,
   hideBalance: false,
   autoLockTimeout: 0,
@@ -67,8 +67,12 @@ function settingsReducer(
 }
 
 function parseDisplayUnit(raw: string | null | undefined): DisplayUnit {
-  if (raw === 'btc' || raw === 'both' || raw === 'sats') {
+  if (raw === 'btc' || raw === 'sats') {
     return raw;
+  }
+  // Legacy combined display; migrate to sats.
+  if (raw === 'both') {
+    return 'sats';
   }
   return 'sats';
 }
@@ -82,8 +86,6 @@ function parseBoolPref(raw: string | null | undefined, defaultValue: boolean): b
 interface SettingsContextType {
   state: SettingsState;
   dispatch: React.Dispatch<SettingsAction>;
-  /** Persists network to storage, then updates state. Await before wallet reconnect. */
-  setNetworkWithPersistence: (network: Network) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(
@@ -92,11 +94,6 @@ const SettingsContext = createContext<SettingsContextType | undefined>(
 
 export function SettingsProvider({children}: {children: ReactNode}) {
   const [state, rawDispatch] = useReducer(settingsReducer, initialSettings);
-
-  const setNetworkWithPersistence = useCallback(async (network: Network) => {
-    await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, network);
-    rawDispatch({type: 'SET_NETWORK', payload: network});
-  }, []);
 
   const dispatch = useCallback((action: SettingsAction) => {
     if (action.type === 'SET_AUTO_LOCK_TIMEOUT') {
@@ -131,14 +128,11 @@ export function SettingsProvider({children}: {children: ReactNode}) {
       try {
         const raw = await AsyncStorage.getItem(ASYNC_KEYS.NETWORK_SELECTION);
         if (cancelled) return;
-        if (raw === null || raw === '') {
-          await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, 'testnet');
-          if (!cancelled) {
-            rawDispatch({type: 'SET_NETWORK', payload: 'testnet'});
-          }
-        } else {
-          const network: Network = raw === 'mainnet' ? 'mainnet' : 'testnet';
-          rawDispatch({type: 'SET_NETWORK', payload: network});
+        if (raw !== 'mainnet') {
+          await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, 'mainnet');
+        }
+        if (!cancelled) {
+          rawDispatch({type: 'SET_NETWORK', payload: 'mainnet'});
         }
 
         const lockRaw = await AsyncStorage.getItem(ASYNC_KEYS.AUTO_LOCK_TIMEOUT);
@@ -151,10 +145,14 @@ export function SettingsProvider({children}: {children: ReactNode}) {
 
         const unitRaw = await AsyncStorage.getItem(ASYNC_KEYS.DISPLAY_UNIT);
         if (!cancelled) {
+          const unit = parseDisplayUnit(unitRaw);
           rawDispatch({
             type: 'SET_DISPLAY_UNIT',
-            payload: parseDisplayUnit(unitRaw),
+            payload: unit,
           });
+          if (unitRaw === 'both') {
+            AsyncStorage.setItem(ASYNC_KEYS.DISPLAY_UNIT, unit).catch(() => {});
+          }
         }
 
         const largeBalRaw = await AsyncStorage.getItem(
@@ -179,10 +177,10 @@ export function SettingsProvider({children}: {children: ReactNode}) {
         }
       } catch {
         if (!cancelled) {
-          await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, 'testnet').catch(
+          await AsyncStorage.setItem(ASYNC_KEYS.NETWORK_SELECTION, 'mainnet').catch(
             () => {},
           );
-          rawDispatch({type: 'SET_NETWORK', payload: 'testnet'});
+          rawDispatch({type: 'SET_NETWORK', payload: 'mainnet'});
         }
       }
     })();
@@ -193,7 +191,7 @@ export function SettingsProvider({children}: {children: ReactNode}) {
 
   return (
     <SettingsContext.Provider
-      value={{state, dispatch, setNetworkWithPersistence}}>
+      value={{state, dispatch}}>
       {children}
     </SettingsContext.Provider>
   );

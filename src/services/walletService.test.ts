@@ -37,7 +37,12 @@ vi.mock('@breeztech/breez-sdk-spark-react-native', () => {
     Medium: 'Medium',
     Fast: 'Fast',
   };
-  const SendPaymentMethod_Tags = { BitcoinAddress: 'BitcoinAddress' };
+  const SendPaymentMethod_Tags = {
+    BitcoinAddress: 'BitcoinAddress',
+    Bolt11Invoice: 'Bolt11Invoice',
+    SparkAddress: 'SparkAddress',
+    SparkInvoice: 'SparkInvoice',
+  };
 
   const SdkError = {
     instanceOf: (e: unknown) =>
@@ -130,7 +135,7 @@ vi.mock('expo-file-system/legacy', () => ({
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
-    getItem: vi.fn().mockResolvedValue('testnet'),
+    getItem: vi.fn().mockResolvedValue('mainnet'),
     setItem: vi.fn(),
     removeItem: vi.fn(),
   },
@@ -157,6 +162,7 @@ import type {
 import {
   createLightningInvoice,
   disconnectWallet,
+  estimateLightningSendFee,
   estimateWithdrawalFee,
   executeWithdrawal,
   getChannels,
@@ -720,6 +726,47 @@ describe('walletService', () => {
         new Error('receive failed'),
       );
       await expect(createLightningInvoice(10)).rejects.toThrow();
+    });
+
+    it('estimateLightningSendFee sums lightning and spark fees for BOLT11 quote', async () => {
+      await initializeWallet();
+      hoisted.prepareSendPayment.mockResolvedValueOnce({
+        paymentMethod: {
+          tag: SendPaymentMethod_Tags.Bolt11Invoice,
+          inner: {
+            lightningFeeSats: 4n,
+            sparkTransferFeeSats: 6n,
+          },
+        },
+      });
+      const fee = await estimateLightningSendFee('lnbc1testinvoice', 500);
+      expect(fee).toBe(10);
+    });
+
+    it('estimateLightningSendFee uses prepareLnurlPay for LNURL after parse', async () => {
+      await initializeWallet();
+      hoisted.mockSdk.parse.mockResolvedValueOnce({
+        __shape: 'lnurlpay',
+        inner: [{}],
+      });
+      hoisted.mockSdk.prepareLnurlPay.mockResolvedValueOnce({
+        feeSats: 14n,
+      });
+      const fee = await estimateLightningSendFee(
+        'lnurl1dp68gurn8ghj7mrw9euxjun0d3shqunzw9kxz7r0d9hxuctdv9kzgetrv9h8',
+        200,
+      );
+      expect(fee).toBe(14);
+      expect(hoisted.mockSdk.prepareLnurlPay).toHaveBeenCalled();
+    });
+
+    it('estimateLightningSendFee returns null for on-chain address', async () => {
+      await initializeWallet();
+      const fee = await estimateLightningSendFee(
+        'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
+        1000,
+      );
+      expect(fee).toBeNull();
     });
 
     it('getChannels returns SDK channels when listChannels is available', async () => {

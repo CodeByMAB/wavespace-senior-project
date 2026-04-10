@@ -12,15 +12,8 @@ describe('storage constants', () => {
     expect(new Set(values).size).toBe(values.length);
   });
 
-  it('nodeStateCacheKey(mainnet) includes mainnet', () => {
-    expect(nodeStateCacheKey('mainnet')).toContain('mainnet');
-  });
-
-  it('nodeStateCacheKey(testnet) includes testnet', () => {
-    expect(nodeStateCacheKey('testnet')).toContain('testnet');
-  });
-
-  it('mainnet and testnet cache keys differ', () => {
-    expect(nodeStateCacheKey('mainnet')).not.toBe(nodeStateCacheKey('testnet'));
+  it('nodeStateCacheKey is stable mainnet snapshot key', () => {
+    expect(nodeStateCacheKey()).toContain('mainnet');
+    expect(nodeStateCacheKey()).toBe(nodeStateCacheKey());
   });
 });

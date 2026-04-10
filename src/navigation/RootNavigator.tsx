@@ -35,6 +35,14 @@ export default function RootNavigator() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      void AsyncStorage.getItem(ASYNC_KEYS.ONBOARDING_COMPLETED).then((value) => {
+        setOnboardingComplete(value === 'true');
+      });
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
     if (prevAuthRef.current && !isAuthenticated) {
       disconnectWallet();
     }

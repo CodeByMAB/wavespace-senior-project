@@ -94,17 +94,6 @@ export default function DashboardScreen() {
 
       <LiquidityBar />
 
-      <TouchableOpacity
-        style={styles.channelsRow}
-        onPress={() => navigation.navigate('ChannelList')}
-        activeOpacity={0.7}>
-        <View style={styles.channelsRowLeft}>
-          <Ionicons name="git-branch-outline" size={20} color={colors.textTertiary} />
-          <Text style={styles.channelsRowLabel}>Channels</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-      </TouchableOpacity>
-
       <RecentTransactions
         transactions={state.transactions}
         onSeeAll={() => {
@@ -152,27 +141,5 @@ const styles = StyleSheet.create({
   },
   alertBannerTextInfo: {
     color: colors.textSecondary,
-  },
-  channelsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: spacing.xl,
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-  },
-  channelsRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  channelsRowLabel: {
-    fontSize: 15,
-    fontWeight: '400',
-    color: colors.textPrimary,
   },
 });
