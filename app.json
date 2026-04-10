@@ -18,11 +18,11 @@
     "updates": {
       "enabled": true,
       "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/a0000000-0000-4000-8000-000000000001"
+      "url": "https://u.expo.dev/1e4cd615-927c-4036-81b5-998b36281d83"
     },
     "extra": {
       "eas": {
-        "projectId": "a0000000-0000-4000-8000-000000000001"
+        "projectId": "1e4cd615-927c-4036-81b5-998b36281d83"
       }
     },
     "ios": {

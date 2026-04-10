@@ -19,9 +19,6 @@
       },
       "android": {
         "buildType": "app-bundle"
-      },
-      "env": {
-        "BREEZ_API_KEY": "..."
       }
     }
   },
