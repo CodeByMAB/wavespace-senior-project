@@ -1,129 +1,158 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  Image,
-} from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { OnboardingStackParamList } from '@navigation/OnboardingStack';
+import React, {useEffect, useRef} from 'react';
+import {View, Text, StyleSheet, Animated, Image} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {GradientBackground} from '@components/common/GradientBackground';
+import {Button} from '@components/common/Button';
+import {colors, spacing, typography} from '@theme/index';
+import {OnboardingStackParamList} from '@navigation/OnboardingStack';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Welcome'>;
 
-export default function WelcomeScreen({ navigation }: Props) {
+const CYCLING_WORDS = ['Send', 'Stack', 'Spend', 'Save'];
+const CYCLE_DURATION = 2500;
+
+function CyclingText() {
+  const currentRef = useRef(0);
+  const fadeAnims = useRef(CYCLING_WORDS.map(() => new Animated.Value(0.15))).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnims[0], {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+
+    const interval = setInterval(() => {
+      const current = currentRef.current;
+      const next = (current + 1) % CYCLING_WORDS.length;
+      currentRef.current = next;
+
+      Animated.timing(fadeAnims[current], {
+        toValue: 0.15,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+
+      Animated.timing(fadeAnims[next], {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+    }, CYCLE_DURATION);
+
+    return () => clearInterval(interval);
+  }, [fadeAnims]);
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <View style={styles.hero}>
-          <View style={styles.logoPlaceholder}>
-            <Text style={styles.logoText}>⚡</Text>
+    <View style={styles.cyclingContainer}>
+      {CYCLING_WORDS.map((word, index) => (
+        <Animated.Text
+          key={word}
+          style={[
+            styles.cyclingWord,
+            {opacity: fadeAnims[index]},
+          ]}>
+          {word}
+        </Animated.Text>
+      ))}
+    </View>
+  );
+}
+
+export default function WelcomeScreen({navigation}: Props) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <GradientBackground glow>
+      <View style={[styles.container, {paddingTop: insets.top}]}>
+        <View style={styles.topSection}>
+          <CyclingText />
+        </View>
+
+        <View style={[styles.bottomSection, {paddingBottom: insets.bottom + spacing.xxl}]}>
+          <Image
+            source={require('../../../assets/images/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+
+          <Text style={styles.headline}>
+            Your bitcoin,{'\n'}your way
+          </Text>
+
+          <Text style={styles.subtitle}>
+            Self-custodial Lightning wallet{'\n'}for instant Bitcoin payments.
+          </Text>
+
+          <View style={styles.buttons}>
+            <Button
+              title="Create New Wallet"
+              onPress={() => navigation.navigate('CreateWallet')}
+              style={styles.primaryBtn}
+            />
+            <Button
+              title="Restore Existing Wallet"
+              onPress={() => navigation.navigate('RestoreWallet')}
+              variant="secondary"
+              icon="download-outline"
+              style={styles.secondaryBtn}
+            />
           </View>
-          <Text style={styles.appName}>Wavespace</Text>
-          <Text style={styles.tagline}>Your self-custodial Lightning wallet</Text>
         </View>
-
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => navigation.navigate('CreateWallet')}
-            accessibilityRole="button"
-            accessibilityLabel="Create a new wallet"
-          >
-            <Text style={styles.primaryButtonText}>Create New Wallet</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => navigation.navigate('RestoreWallet')}
-            accessibilityRole="button"
-            accessibilityLabel="Restore an existing wallet"
-          >
-            <Text style={styles.secondaryButtonText}>Restore Existing Wallet</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.disclaimer}>
-          Wavespace is non-custodial. You are solely responsible for your funds.
-        </Text>
       </View>
-    </SafeAreaView>
+    </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: '#0A0A0A',
-  },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    justifyContent: 'space-between',
-    paddingVertical: 40,
   },
-  hero: {
+  topSection: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-  },
-  logoPlaceholder: {
-    width: 96,
-    height: 96,
-    borderRadius: 24,
-    backgroundColor: '#1A1A1A',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
+    paddingHorizontal: spacing.xxl,
   },
-  logoText: {
-    fontSize: 48,
+  cyclingContainer: {
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  appName: {
-    fontSize: 36,
+  cyclingWord: {
+    fontSize: 52,
     fontWeight: '700',
-    color: '#FFFFFF',
+    letterSpacing: -1,
+    color: colors.textPrimary,
+  },
+  bottomSection: {
+    paddingHorizontal: spacing.xxl,
+    gap: spacing.lg,
+  },
+  logo: {
+    width: 52,
+    height: 52,
+  },
+  headline: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.textPrimary,
     letterSpacing: -0.5,
+    lineHeight: 38,
   },
-  tagline: {
-    fontSize: 16,
-    color: '#888',
-    textAlign: 'center',
+  subtitle: {
+    ...typography.bodyLarge,
+    color: colors.textSecondary,
+    lineHeight: 24,
   },
-  actions: {
-    gap: 12,
+  buttons: {
+    gap: spacing.md,
+    marginTop: spacing.md,
   },
-  primaryButton: {
-    backgroundColor: '#F7931A',
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
+  primaryBtn: {
+    borderRadius: 50,
   },
-  primaryButtonText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    backgroundColor: '#1A1A1A',
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2A2A2A',
-  },
-  secondaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  disclaimer: {
-    fontSize: 12,
-    color: '#555',
-    textAlign: 'center',
-    marginTop: 24,
-    lineHeight: 18,
+  secondaryBtn: {
+    borderRadius: 50,
   },
 });

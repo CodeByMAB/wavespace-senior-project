@@ -96,6 +96,10 @@ bower_components
 .yarn/install-state.gz
 .pnp.*
 
-# Generated native folders (root-level only)
+# Generated native folders
 /ios
 /android
+**/Pods/
+**/build/
+**/vendor/bundle/
+**/.bundle/
