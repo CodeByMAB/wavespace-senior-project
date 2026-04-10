@@ -12,7 +12,17 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run src/integration",
     "test:e2e": "bash scripts/qa-e2e-maestro.sh",
-    "generate:app-icon": "node scripts/generate-app-icon.cjs"
+    "generate:app-icon": "node scripts/generate-app-icon.cjs",
+    "eas:build:dev:ios": "npx --yes eas-cli build --profile development --platform ios",
+    "eas:build:dev:android": "npx --yes eas-cli build --profile development --platform android",
+    "eas:build:preview:ios": "npx --yes eas-cli build --profile preview --platform ios",
+    "eas:build:preview:android": "npx --yes eas-cli build --profile preview --platform android",
+    "eas:build:ios": "npx --yes eas-cli build --profile production --platform ios",
+    "eas:build:android": "npx --yes eas-cli build --profile production --platform android",
+    "eas:build:all": "npx --yes eas-cli build --profile production --platform all",
+    "eas:submit:ios": "npx --yes eas-cli submit --profile production --platform ios",
+    "eas:submit:android": "npx --yes eas-cli submit --profile production --platform android",
+    "eas:update": "npx --yes eas-cli update"
   },
   "dependencies": {
     "@breeztech/breez-sdk-spark-react-native": "^0.10.0",
