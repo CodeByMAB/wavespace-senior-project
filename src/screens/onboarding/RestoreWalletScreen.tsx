@@ -1,20 +1,25 @@
-import React, { useRef, useState } from 'react';
+import React, {useRef, useState} from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { OnboardingStackParamList } from '@navigation/OnboardingStack';
-import { validateMnemonic } from '@services/mnemonicService';
-import { deleteMnemonic, storeMnemonic, storePassphrase } from '@services/secureStorageService';
-import { initializeWallet, mapSdkError } from '@services/walletService';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {GradientBackground} from '@components/common/GradientBackground';
+import {Header} from '@components/common/Header';
+import {Button} from '@components/common/Button';
+import {Ionicons} from '@expo/vector-icons';
+import {colors, spacing, typography} from '@theme/index';
+import {OnboardingStackParamList} from '@navigation/OnboardingStack';
+import {validateMnemonic} from '@services/mnemonicService';
+import {deleteMnemonic, storeMnemonic, storePassphrase} from '@services/secureStorageService';
+import {initializeWallet, mapSdkError} from '@services/walletService';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'RestoreWallet'>;
 type WordCount = 12 | 24;
@@ -23,12 +28,13 @@ type InitStep = 'idle' | 'storing' | 'initializing' | 'syncing';
 
 const STEP_LABELS: Record<InitStep, string> = {
   idle: '',
-  storing: 'Securing wallet…',
-  initializing: 'Initializing wallet…',
-  syncing: 'Syncing transaction history…',
+  storing: 'Securing wallet\u2026',
+  initializing: 'Initializing wallet\u2026',
+  syncing: 'Syncing transaction history\u2026',
 };
 
-export default function RestoreWalletScreen({ navigation }: Props) {
+export default function RestoreWalletScreen({navigation}: Props) {
+  const insets = useSafeAreaInsets();
   const [wordCount, setWordCount] = useState<WordCount>(12);
   const [words, setWords] = useState<string[]>(Array(12).fill(''));
   const [passphrase, setPassphrase] = useState('');
@@ -50,7 +56,6 @@ export default function RestoreWalletScreen({ navigation }: Props) {
   };
 
   const handleWordChange = (index: number, value: string) => {
-    // Auto-advance on space: paste the word into the current slot, move to next
     if (value.includes(' ')) {
       const trimmed = value.replace(/\s+/g, '').toLowerCase();
       const updated = [...words];
@@ -71,7 +76,7 @@ export default function RestoreWalletScreen({ navigation }: Props) {
   };
 
   const handleRestore = async () => {
-    const mnemonic = words.map((w) => w.trim()).join(' ');
+    const mnemonic = words.map(w => w.trim()).join(' ');
     const isValid = validateMnemonic(mnemonic);
 
     if (!isValid) {
@@ -85,24 +90,18 @@ export default function RestoreWalletScreen({ navigation }: Props) {
     let mnemonicStored = false;
     let walletReady = false;
     try {
-      // 1. Persist mnemonic (AES-256-GCM encrypted)
       setInitStep('storing');
       await storeMnemonic(mnemonic);
       mnemonicStored = true;
 
-      // 2. Persist passphrase so future restorations use the same derivation
-      //    parameters. An empty string clears any previously stored passphrase.
       await storePassphrase(passphrase);
 
-      // 3. Derive wallet keys and connect to Breez Spark, passing the
-      //    passphrase so the correct HD wallet branch is used from the start.
       setInitStep('initializing');
       await initializeWallet();
       walletReady = true;
 
       setInitStep('syncing');
-      // Allow the SDK a moment to begin its initial sync before navigating
-      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+      await new Promise<void>(resolve => setTimeout(resolve, 1500));
 
       navigation.navigate('PinSetup');
     } catch (err) {
@@ -111,7 +110,7 @@ export default function RestoreWalletScreen({ navigation }: Props) {
           await deleteMnemonic();
           await storePassphrase('');
         } catch {
-          // Best-effort cleanup; original error is surfaced below.
+          // Best-effort cleanup
         }
       }
       const message = mapSdkError(err, 'wallet restore');
@@ -125,30 +124,45 @@ export default function RestoreWalletScreen({ navigation }: Props) {
   const columns = 3;
   const rows: number[][] = [];
   for (let i = 0; i < wordCount; i += columns) {
-    rows.push(Array.from({ length: columns }, (_, j) => i + j).filter((n) => n < wordCount));
+    rows.push(
+      Array.from({length: columns}, (_, j) => i + j).filter(n => n < wordCount),
+    );
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} disabled={isBusy}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.title}>Restore Wallet</Text>
-        <Text style={styles.subtitle}>
-          Enter your recovery phrase words in the correct order.
-        </Text>
+    <GradientBackground glow>
+      <Header title="" onBack={() => navigation.goBack()} />
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          {paddingBottom: insets.bottom + spacing.xxl},
+        ]}
+        keyboardShouldPersistTaps="handled">
+        <View style={styles.heroSection}>
+          <View style={styles.iconBox}>
+            <Ionicons name="download-outline" size={28} color={colors.primary} />
+          </View>
+          <Text style={styles.headline}>Restore{'\n'}your wallet</Text>
+          <Text style={styles.subtitle}>
+            Enter your recovery phrase words in the correct order.
+          </Text>
+        </View>
 
         <View style={styles.toggleRow}>
-          {([12, 24] as WordCount[]).map((count) => (
+          {([12, 24] as WordCount[]).map(count => (
             <TouchableOpacity
               key={count}
-              style={[styles.toggleChip, wordCount === count && styles.toggleChipSelected]}
+              style={[
+                styles.toggleChip,
+                wordCount === count && styles.toggleChipSelected,
+              ]}
               onPress={() => handleWordCountChange(count)}
-              disabled={isBusy}
-            >
-              <Text style={[styles.toggleChipText, wordCount === count && styles.toggleChipTextSelected]}>
+              disabled={isBusy}>
+              <Text
+                style={[
+                  styles.toggleChipText,
+                  wordCount === count && styles.toggleChipTextSelected,
+                ]}>
                 {count} words
               </Text>
             </TouchableOpacity>
@@ -158,17 +172,19 @@ export default function RestoreWalletScreen({ navigation }: Props) {
         <View style={styles.grid}>
           {rows.map((row, rowIdx) => (
             <View key={rowIdx} style={styles.gridRow}>
-              {row.map((wordIdx) => (
+              {row.map(wordIdx => (
                 <View key={wordIdx} style={styles.wordInputContainer}>
                   <Text style={styles.wordNumber}>{wordIdx + 1}</Text>
                   <TextInput
-                    ref={(el) => { inputRefs.current[wordIdx] = el; }}
+                    ref={el => {
+                      inputRefs.current[wordIdx] = el;
+                    }}
                     style={[
                       styles.wordInput,
                       invalidWords.has(wordIdx) && styles.wordInputError,
                     ]}
                     value={words[wordIdx]}
-                    onChangeText={(v) => handleWordChange(wordIdx, v)}
+                    onChangeText={v => handleWordChange(wordIdx, v)}
                     autoCapitalize="none"
                     autoCorrect={false}
                     spellCheck={false}
@@ -180,6 +196,7 @@ export default function RestoreWalletScreen({ navigation }: Props) {
                       }
                     }}
                     blurOnSubmit={wordIdx === wordCount - 1}
+                    placeholderTextColor={colors.textTertiary}
                   />
                 </View>
               ))}
@@ -195,11 +212,15 @@ export default function RestoreWalletScreen({ navigation }: Props) {
 
         <TouchableOpacity
           style={styles.passphraseToggle}
-          onPress={() => setShowPassphrase((s) => !s)}
-          disabled={isBusy}
-        >
+          onPress={() => setShowPassphrase(s => !s)}
+          disabled={isBusy}>
+          <Ionicons
+            name={showPassphrase ? 'chevron-down' : 'chevron-forward'}
+            size={16}
+            color={colors.textTertiary}
+          />
           <Text style={styles.passphraseToggleText}>
-            {showPassphrase ? '▼' : '▶'} Advanced: BIP39 Passphrase (optional)
+            Advanced: BIP39 Passphrase (optional)
           </Text>
         </TouchableOpacity>
 
@@ -213,7 +234,7 @@ export default function RestoreWalletScreen({ navigation }: Props) {
               value={passphrase}
               onChangeText={setPassphrase}
               placeholder="Optional passphrase"
-              placeholderTextColor="#555"
+              placeholderTextColor={colors.textTertiary}
               autoCapitalize="none"
               autoCorrect={false}
               secureTextEntry
@@ -224,13 +245,14 @@ export default function RestoreWalletScreen({ navigation }: Props) {
 
         {isBusy ? (
           <View style={styles.progressBox}>
-            <ActivityIndicator color="#F7931A" />
+            <ActivityIndicator color={colors.primary} />
             <Text style={styles.progressText}>{STEP_LABELS[initStep]}</Text>
           </View>
         ) : (
           <View style={styles.syncNote}>
             <Text style={styles.syncNoteText}>
-              After restoring, your wallet will sync transaction history automatically.
+              After restoring, your wallet will sync transaction history
+              automatically.
             </Text>
           </View>
         )}
@@ -241,105 +263,173 @@ export default function RestoreWalletScreen({ navigation }: Props) {
           </View>
         ) : null}
 
-        <TouchableOpacity
-          style={[styles.restoreButton, isBusy && styles.restoreButtonDisabled]}
+        <Button
+          title={isBusy ? STEP_LABELS[initStep] : 'Restore Wallet'}
           onPress={handleRestore}
           disabled={isBusy}
-          accessibilityRole="button"
-        >
-          <Text style={styles.restoreButtonText}>
-            {isBusy ? STEP_LABELS[initStep] : 'Restore Wallet'}
-          </Text>
-        </TouchableOpacity>
+          loading={isBusy}
+          icon="refresh-outline"
+          style={styles.btn}
+        />
       </ScrollView>
-    </SafeAreaView>
+    </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0A0A0A' },
-  container: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 16, gap: 20 },
-  backButton: { alignSelf: 'flex-start', paddingVertical: 8 },
-  backText: { color: '#F7931A', fontSize: 16 },
-  title: { fontSize: 24, fontWeight: '700', color: '#FFF' },
-  subtitle: { fontSize: 14, color: '#888', lineHeight: 20 },
-  toggleRow: { flexDirection: 'row', gap: 10 },
-  toggleChip: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#1A1A1A',
-    borderWidth: 1,
-    borderColor: '#2A2A2A',
+  content: {
+    paddingHorizontal: spacing.xxl,
+    gap: spacing.xl,
   },
-  toggleChipSelected: { borderColor: '#F7931A', backgroundColor: '#1F1500' },
-  toggleChipText: { color: '#888', fontSize: 14, fontWeight: '600' },
-  toggleChipTextSelected: { color: '#F7931A' },
-  grid: { gap: 8 },
-  gridRow: { flexDirection: 'row', gap: 8 },
+  heroSection: {
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  iconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: colors.primaryMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headline: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+    lineHeight: 38,
+  },
+  subtitle: {
+    ...typography.bodyLarge,
+    color: colors.textSecondary,
+    lineHeight: 24,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  toggleChip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  toggleChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  toggleChipText: {
+    color: colors.textTertiary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  toggleChipTextSelected: {
+    color: colors.primary,
+  },
+  grid: {
+    gap: 8,
+  },
+  gridRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   wordInputContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#161616',
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: colors.border,
     paddingHorizontal: 8,
     paddingVertical: 8,
     gap: 6,
   },
-  wordNumber: { fontSize: 10, color: '#555', width: 16, textAlign: 'right' },
-  wordInput: { flex: 1, color: '#FFF', fontSize: 13, padding: 0 },
-  wordInputError: { borderColor: '#FF4444' },
-  errorBox: {
-    backgroundColor: '#1A0000',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FF444444',
-    padding: 12,
+  wordNumber: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    width: 16,
+    textAlign: 'right',
   },
-  errorText: { color: '#FF6666', fontSize: 14, lineHeight: 20 },
-  passphraseToggle: { paddingVertical: 4 },
-  passphraseToggleText: { color: '#666', fontSize: 13 },
-  passphraseSection: { gap: 8 },
-  passphraseLabel: { fontSize: 13, color: '#666', lineHeight: 18 },
-  passphraseInput: {
-    backgroundColor: '#161616',
+  wordInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 13,
+    padding: 0,
+  },
+  wordInputError: {
+    borderColor: colors.error,
+  },
+  errorBox: {
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
-    color: '#FFF',
+    borderColor: colors.error,
+    padding: spacing.md,
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  passphraseToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 4,
+  },
+  passphraseToggleText: {
+    color: colors.textTertiary,
+    fontSize: 13,
+  },
+  passphraseSection: {
+    gap: spacing.sm,
+  },
+  passphraseLabel: {
+    fontSize: 13,
+    color: colors.textTertiary,
+    lineHeight: 18,
+  },
+  passphraseInput: {
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.textPrimary,
     fontSize: 15,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   progressBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#0D1A0D',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1A3A1A',
-    padding: 14,
+    borderColor: colors.border,
+    padding: spacing.md,
   },
-  progressText: { color: '#4CAF50', fontSize: 14 },
+  progressText: {
+    color: colors.success,
+    fontSize: 14,
+  },
   syncNote: {
-    backgroundColor: '#0D1A0D',
+    backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1A3A1A',
-    padding: 12,
+    borderColor: colors.border,
+    padding: spacing.md,
   },
-  syncNoteText: { color: '#4CAF50', fontSize: 13, lineHeight: 18 },
-  restoreButton: {
-    backgroundColor: '#F7931A',
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginTop: 8,
+  syncNoteText: {
+    color: colors.success,
+    fontSize: 13,
+    lineHeight: 18,
   },
-  restoreButtonDisabled: { opacity: 0.6 },
-  restoreButtonText: { color: '#000', fontSize: 16, fontWeight: '700' },
+  btn: {
+    borderRadius: 50,
+  },
 });

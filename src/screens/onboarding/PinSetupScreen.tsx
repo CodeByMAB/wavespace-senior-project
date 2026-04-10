@@ -1,173 +1,182 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  Vibration,
-  Alert,
-} from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { OnboardingStackParamList } from '@navigation/OnboardingStack';
-import { hashPin } from '@services/authService';
-import { storePinHash } from '@services/secureStorageService';
+import React, {useState, useCallback} from 'react';
+import {View, Text, StyleSheet, Vibration, Alert} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {GradientBackground} from '@components/common/GradientBackground';
+import {PinPad} from '@components/onboarding/PinPad';
+import {Ionicons} from '@expo/vector-icons';
+import {colors, spacing, typography} from '@theme/index';
+import {OnboardingStackParamList} from '@navigation/OnboardingStack';
+import {hashPin} from '@services/authService';
+import {storePinHash} from '@services/secureStorageService';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PinSetup'>;
 
 const PIN_LENGTH = 6;
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
 
-type Step = 'enter' | 'confirm';
-
-export default function PinSetupScreen({ navigation }: Props) {
-  const [step, setStep] = useState<Step>('enter');
+export default function PinSetupScreen({navigation}: Props) {
+  const insets = useSafeAreaInsets();
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
+  const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  const current = step === 'enter' ? pin : confirmPin;
-  const setCurrent = step === 'enter' ? setPin : setConfirmPin;
+  const currentPin = isConfirming ? confirmPin : pin;
 
-  const handleKey = (key: string) => {
+  const handleConfirm = useCallback(
+    async (confirmedPin: string) => {
+      if (confirmedPin !== pin) {
+        Vibration.vibrate(300);
+        setError('PINs do not match. Try again.');
+        setConfirmPin('');
+        setIsConfirming(false);
+        setPin('');
+        return;
+      }
+
+      setIsSaving(true);
+      try {
+        const hash = await hashPin(pin);
+        await storePinHash(hash);
+        navigation.navigate('BiometricSetup');
+      } catch {
+        Alert.alert('Error', 'Failed to set up PIN. Please try again.');
+        setIsSaving(false);
+      }
+    },
+    [pin, navigation],
+  );
+
+  const handlePress = useCallback(
+    (digit: string) => {
+      if (isSaving) return;
+      setError('');
+      if (isConfirming) {
+        if (confirmPin.length < PIN_LENGTH) {
+          const newPin = confirmPin + digit;
+          setConfirmPin(newPin);
+          if (newPin.length === PIN_LENGTH) {
+            handleConfirm(newPin);
+          }
+        }
+      } else {
+        if (pin.length < PIN_LENGTH) {
+          const newPin = pin + digit;
+          setPin(newPin);
+          if (newPin.length === PIN_LENGTH) {
+            setIsConfirming(true);
+          }
+        }
+      }
+    },
+    [pin, confirmPin, isConfirming, isSaving, handleConfirm],
+  );
+
+  const handleDelete = useCallback(() => {
     if (isSaving) return;
     setError('');
-
-    if (key === '⌫') {
-      setCurrent((prev) => prev.slice(0, -1));
-      return;
+    if (isConfirming) {
+      setConfirmPin(prev => prev.slice(0, -1));
+    } else {
+      setPin(prev => prev.slice(0, -1));
     }
-    if (key === '') return;
-    if (current.length >= PIN_LENGTH) return;
-
-    const next = current + key;
-    setCurrent(next);
-
-    if (next.length === PIN_LENGTH) {
-      if (step === 'enter') {
-        setTimeout(() => setStep('confirm'), 300);
-      } else {
-        handleConfirm(next);
-      }
-    }
-  };
-
-  const handleConfirm = async (confirmedPin: string) => {
-    if (pin !== confirmedPin) {
-      Vibration.vibrate(300);
-      setError('PINs do not match. Please try again.');
-      setConfirmPin('');
-      setStep('enter');
-      setPin('');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const hash = await hashPin(pin);
-      await storePinHash(hash);
-      navigation.navigate('BiometricSetup');
-    } catch {
-      Alert.alert('Error', 'Failed to set up PIN. Please try again.');
-      setIsSaving(false);
-    }
-  };
-
-  const dots = Array.from({ length: PIN_LENGTH }, (_, i) => i < current.length);
+  }, [isConfirming, isSaving]);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <Text style={styles.title}>
-          {step === 'enter' ? 'Set Up PIN' : 'Confirm PIN'}
-        </Text>
-        <Text style={styles.subtitle}>
-          {step === 'enter'
-            ? 'Choose a 6-digit PIN to secure your wallet'
-            : 'Re-enter your PIN to confirm'}
-        </Text>
+    <GradientBackground glow>
+      <View
+        style={[
+          styles.container,
+          {paddingTop: insets.top + spacing.huge, paddingBottom: insets.bottom + spacing.xl},
+        ]}>
+        <View style={styles.topSection}>
+          <View style={styles.iconBox}>
+            <Ionicons name="lock-closed-outline" size={28} color={colors.primary} />
+          </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Text style={styles.title}>
+            {isConfirming ? 'Confirm\nyour PIN' : 'Create\na PIN'}
+          </Text>
+          <Text style={styles.subtitle}>
+            {isConfirming
+              ? 'Enter your PIN again to confirm'
+              : 'Set a 6-digit PIN to secure your wallet'}
+          </Text>
 
-        <View style={styles.dotsRow}>
-          {dots.map((filled, i) => (
-            <View
-              key={i}
-              style={[styles.dot, filled && styles.dotFilled]}
-            />
-          ))}
+          <View style={styles.dots}>
+            {Array.from({length: PIN_LENGTH}).map((_, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.dot,
+                  i < currentPin.length && styles.dotFilled,
+                ]}
+              />
+            ))}
+          </View>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
 
-        <View style={styles.keypad}>
-          {KEYS.map((key, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={[styles.key, key === '' && styles.keyInvisible]}
-              onPress={() => handleKey(key)}
-              disabled={key === '' || isSaving}
-              accessibilityRole="button"
-              accessibilityLabel={key === '⌫' ? 'Delete' : key}
-            >
-              <Text style={[styles.keyText, key === '⌫' && styles.keyDelete]}>
-                {key}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <PinPad onPress={handlePress} onDelete={handleDelete} />
       </View>
-    </SafeAreaView>
+    </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0A0A0A' },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    alignItems: 'center',
     justifyContent: 'space-between',
   },
-  title: { fontSize: 26, fontWeight: '700', color: '#FFF', textAlign: 'center' },
-  subtitle: { fontSize: 14, color: '#888', textAlign: 'center', marginTop: 8 },
-  error: {
-    color: '#FF6666',
-    fontSize: 14,
-    textAlign: 'center',
-    paddingHorizontal: 16,
+  topSection: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.xxl,
   },
-  dotsRow: {
+  iconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: colors.primaryMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+    lineHeight: 38,
+    textAlign: 'center',
+  },
+  subtitle: {
+    ...typography.bodyMedium,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  dots: {
     flexDirection: 'row',
-    gap: 20,
-    marginVertical: 32,
+    gap: spacing.lg,
+    marginTop: spacing.xxl,
   },
   dot: {
     width: 16,
     height: 16,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#444',
+    borderColor: colors.border,
     backgroundColor: 'transparent',
   },
-  dotFilled: { backgroundColor: '#F7931A', borderColor: '#F7931A' },
-  keypad: {
-    width: '100%',
-    maxWidth: 320,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
+  dotFilled: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  key: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#1A1A1A',
-    alignItems: 'center',
-    justifyContent: 'center',
+  error: {
+    ...typography.bodySmall,
+    color: colors.error,
+    marginTop: spacing.sm,
   },
-  keyInvisible: { backgroundColor: 'transparent' },
-  keyText: { fontSize: 24, color: '#FFF', fontWeight: '500' },
-  keyDelete: { fontSize: 20, color: '#F7931A' },
 });

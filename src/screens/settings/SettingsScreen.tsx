@@ -9,40 +9,43 @@ import {
   Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import type { SettingsStackParamList } from '@/types/navigation';
-import type { DisplayUnit } from '@/types/wallet';
-import { useSettings } from '@context/SettingsContext';
-import { useAuthContext } from '@context/AuthContext';
-import { Button } from '@components/common/Button';
-import { deleteMnemonic } from '@services/secureStorageService';
-import { disconnectWallet } from '@services/walletService';
-import { colors, spacing } from '@theme/index';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {Ionicons} from '@expo/vector-icons';
+import type {SettingsStackParamList} from '@/types/navigation';
+import type {DisplayUnit, Network} from '@/types/wallet';
+import {useSettings} from '@context/SettingsContext';
+import {useAuthContext} from '@context/AuthContext';
+import {Button} from '@components/common/Button';
+import {CopyableText} from '@components/common/CopyableText';
+import {useWallet} from '@context/WalletContext';
+import {deleteMnemonic} from '@services/secureStorageService';
+import {disconnectWallet} from '@services/walletService';
+import {colors, spacing} from '@theme/index';
 
 type Nav = NativeStackNavigationProp<SettingsStackParamList>;
-
-function displayUnitLabel(unit: DisplayUnit): string {
-  if (unit === 'btc') return 'BTC';
-  if (unit === 'both') return 'Both';
-  return 'Sats';
-}
-
-function autoLockLabel(seconds: number): string {
-  if (seconds === 0) return 'Never';
-  if (seconds === 60) return '1 min';
-  if (seconds === 300) return '5 min';
-  if (seconds === 900) return '15 min';
-  return `${seconds}s`;
-}
 
 export function SettingsScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const { state: settings, dispatch: settingsDispatch } = useSettings();
-  const { logout } = useAuthContext();
+  const {state: settings, dispatch: settingsDispatch} = useSettings();
+  const {state: walletState} = useWallet();
+  const {logout} = useAuthContext();
+
+  const handleNetworkChange = (network: Network) => {
+    Alert.alert(
+      'Switch Network',
+      `Are you sure you want to switch to ${network}? This will require a wallet restart.`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Switch',
+          onPress: () => settingsDispatch({type: 'SET_NETWORK', payload: network}),
+        },
+      ],
+    );
+  };
 
   const runResetWallet = async () => {
     try {
@@ -65,55 +68,108 @@ export function SettingsScreen() {
       showsVerticalScrollIndicator={false}>
       <Text style={styles.screenTitle}>Settings</Text>
 
+      {/* Network */}
       <Text style={styles.sectionTitle}>NETWORK</Text>
       <View style={styles.section}>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => navigation.navigate('NetworkSelection')}
-          activeOpacity={0.7}>
+        <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Ionicons name="globe-outline" size={20} color={colors.textTertiary} />
             <Text style={styles.rowLabel}>Network</Text>
           </View>
-          <View style={styles.rowRight}>
-            <Text style={styles.rowValue}>
-              {settings.network === 'mainnet' ? 'Mainnet' : 'Testnet'}
-            </Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          <View style={styles.segmentedControl}>
+            <TouchableOpacity
+              style={[
+                styles.segment,
+                settings.network === 'testnet' && styles.segmentActive,
+              ]}
+              onPress={() => handleNetworkChange('testnet')}>
+              <Text
+                style={[
+                  styles.segmentText,
+                  settings.network === 'testnet' && styles.segmentTextActive,
+                ]}>
+                Testnet
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.segment,
+                settings.network === 'mainnet' && styles.segmentActive,
+              ]}
+              onPress={() => handleNetworkChange('mainnet')}>
+              <Text
+                style={[
+                  styles.segmentText,
+                  settings.network === 'mainnet' && styles.segmentTextActive,
+                ]}>
+                Mainnet
+              </Text>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
       </View>
 
+      {/* Display */}
       <Text style={styles.sectionTitle}>DISPLAY</Text>
       <View style={styles.section}>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => navigation.navigate('DisplayUnits')}
-          activeOpacity={0.7}>
+        <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Ionicons name="calculator-outline" size={20} color={colors.textTertiary} />
-            <Text style={styles.rowLabel}>Display unit</Text>
+            <Text style={styles.rowLabel}>Display Unit</Text>
           </View>
-          <View style={styles.rowRight}>
-            <Text style={styles.rowValue}>{displayUnitLabel(settings.displayUnit)}</Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          <View style={styles.segmentedControl}>
+            <TouchableOpacity
+              style={[
+                styles.segment,
+                settings.displayUnit === 'sats' && styles.segmentActive,
+              ]}
+              onPress={() =>
+                settingsDispatch({type: 'SET_DISPLAY_UNIT', payload: 'sats'})
+              }>
+              <Text
+                style={[
+                  styles.segmentText,
+                  settings.displayUnit === 'sats' && styles.segmentTextActive,
+                ]}>
+                Sats
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.segment,
+                settings.displayUnit === 'btc' && styles.segmentActive,
+              ]}
+              onPress={() =>
+                settingsDispatch({type: 'SET_DISPLAY_UNIT', payload: 'btc'})
+              }>
+              <Text
+                style={[
+                  styles.segmentText,
+                  settings.displayUnit === 'btc' && styles.segmentTextActive,
+                ]}>
+                BTC
+              </Text>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
         <View style={styles.rowSeparator} />
         <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Ionicons name="eye-off-outline" size={20} color={colors.textTertiary} />
-            <Text style={styles.rowLabel}>Hide balance</Text>
+            <Text style={styles.rowLabel}>Hide Balance</Text>
           </View>
           <Switch
             value={settings.hideBalance}
-            onValueChange={() => settingsDispatch({ type: 'TOGGLE_HIDE_BALANCE' })}
-            trackColor={{ false: colors.border, true: colors.primaryDark }}
+            onValueChange={() =>
+              settingsDispatch({type: 'TOGGLE_HIDE_BALANCE'})
+            }
+            trackColor={{false: colors.border, true: colors.primaryDark}}
             thumbColor={settings.hideBalance ? colors.primary : colors.textTertiary}
           />
         </View>
       </View>
 
+      {/* Security */}
       <Text style={styles.sectionTitle}>SECURITY</Text>
       <View style={styles.section}>
         <TouchableOpacity
@@ -127,21 +183,34 @@ export function SettingsScreen() {
           <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
         </TouchableOpacity>
         <View style={styles.rowSeparator} />
+        <View style={styles.row}>
+          <View style={styles.rowLeft}>
+            <Ionicons name="finger-print-outline" size={20} color={colors.textTertiary} />
+            <Text style={styles.rowLabel}>Biometric Login</Text>
+          </View>
+          <Switch
+            value={settings.biometricsEnabled}
+            onValueChange={() =>
+              settingsDispatch({type: 'TOGGLE_BIOMETRICS'})
+            }
+            trackColor={{false: colors.border, true: colors.primaryDark}}
+            thumbColor={settings.biometricsEnabled ? colors.primary : colors.textTertiary}
+          />
+        </View>
+        <View style={styles.rowSeparator} />
         <TouchableOpacity
           style={styles.row}
           onPress={() => navigation.navigate('SecuritySettings')}
           activeOpacity={0.7}>
           <View style={styles.rowLeft}>
             <Ionicons name="time-outline" size={20} color={colors.textTertiary} />
-            <Text style={styles.rowLabel}>Auto-lock</Text>
+            <Text style={styles.rowLabel}>Auto-lock & Security</Text>
           </View>
-          <View style={styles.rowRight}>
-            <Text style={styles.rowValue}>{autoLockLabel(settings.autoLockTimeout)}</Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
         </TouchableOpacity>
       </View>
 
+      {/* Backup */}
       <Text style={styles.sectionTitle}>BACKUP</Text>
       <View style={styles.section}>
         <TouchableOpacity
@@ -150,25 +219,33 @@ export function SettingsScreen() {
           activeOpacity={0.7}>
           <View style={styles.rowLeft}>
             <Ionicons name="document-text-outline" size={20} color={colors.textTertiary} />
-            <Text style={styles.rowLabel}>Backup / export</Text>
+            <Text style={styles.rowLabel}>View Recovery Phrase</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
         </TouchableOpacity>
       </View>
 
+      {/* About */}
       <Text style={styles.sectionTitle}>ABOUT</Text>
       <View style={styles.section}>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => navigation.navigate('About')}
-          activeOpacity={0.7}>
+        <View style={styles.row}>
           <View style={styles.rowLeft}>
             <Ionicons name="information-circle-outline" size={20} color={colors.textTertiary} />
-            <Text style={styles.rowLabel}>About</Text>
+            <Text style={styles.rowLabel}>Version</Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-        </TouchableOpacity>
+          <Text style={styles.rowValue}>0.1.0</Text>
+        </View>
+        <View style={styles.rowSeparator} />
+        <View style={styles.row}>
+          <View style={styles.rowLeft}>
+            <Ionicons name="cube-outline" size={20} color={colors.textTertiary} />
+            <Text style={styles.rowLabel}>Block Height</Text>
+          </View>
+          <Text style={styles.rowValue}>{walletState.blockHeight}</Text>
+        </View>
       </View>
+
+      <CopyableText label="NODE ID" text={walletState.nodeId} />
 
       <View style={styles.dangerSection}>
         <Button
@@ -181,7 +258,7 @@ export function SettingsScreen() {
               'Reset Wallet',
               'This will erase all wallet data. Make sure you have backed up your recovery phrase.',
               [
-                { text: 'Cancel', style: 'cancel' },
+                {text: 'Cancel', style: 'cancel'},
                 {
                   text: 'Reset',
                   style: 'destructive',
@@ -236,11 +313,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     flex: 1,
   },
-  rowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
   rowLabel: {
     fontSize: 15,
     fontWeight: '400',
@@ -254,6 +326,28 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.border,
     marginHorizontal: spacing.lg,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  segment: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  segmentActive: {
+    backgroundColor: colors.primaryMuted,
+  },
+  segmentText: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    fontWeight: '500',
+  },
+  segmentTextActive: {
+    color: colors.primary,
   },
   dangerSection: {
     marginTop: spacing.xxxl,
