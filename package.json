@@ -23,7 +23,8 @@
     "eas:build:all": "npx --yes eas-cli build --profile production --platform all",
     "eas:submit:ios": "npx --yes eas-cli submit --profile production --platform ios",
     "eas:submit:android": "npx --yes eas-cli submit --profile production --platform android",
-    "eas:update": "npx --yes eas-cli update"
+    "eas:update": "npx --yes eas-cli update",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@breeztech/breez-sdk-spark-react-native": "^0.10.0",
@@ -70,6 +71,7 @@
     "babel-plugin-module-resolver": "^5.0.2",
     "babel-preset-expo": "~55.0.8",
     "jimp": "^1.6.1",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.2",
     "vitest": "^3.2.4"
   },
