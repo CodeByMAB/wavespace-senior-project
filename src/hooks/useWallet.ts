@@ -60,8 +60,12 @@ export function useWallet(
   const [appStateNonce, setAppStateNonce] = useState(0);
   const listenerIdRef = useRef<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
+  const isAuthenticatedRef = useRef(isAuthenticated);
   const onPaymentEventRef = useRef(onPaymentEvent);
   onPaymentEventRef.current = onPaymentEvent;
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
   const receiveOpeningMonitorRef = useRef(false);
 
   /**
@@ -197,6 +201,13 @@ export function useWallet(
       // app switcher, and other transitions — disconnecting there races with
       // `initializeWallet()` and surfaces "Wallet disconnected during initialization."
       if (next === 'background') {
+        // During onboarding, restore flows call `initializeWallet()` before the user is
+        // authenticated. Tearing down here left the SDK cleared while hooks expected a
+        // clean reconnect after unlock — often fixed only by restarting the app.
+        if (!isAuthenticatedRef.current) {
+          appStateRef.current = next;
+          return;
+        }
         sessionRef.current++;
         setState(INITIAL_STATE);
         setTransactions([]);
@@ -217,12 +228,12 @@ export function useWallet(
           }
           await disconnectWallet();
         })();
-      } else if (next === 'active' && isAuthenticated && prev === 'background') {
+      } else if (next === 'active' && isAuthenticatedRef.current && prev === 'background') {
         setAppStateNonce((n) => n + 1);
       }
     });
     return () => sub.remove();
-  }, [isAuthenticated]);
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) {

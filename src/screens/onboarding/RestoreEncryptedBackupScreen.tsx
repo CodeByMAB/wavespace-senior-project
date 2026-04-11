@@ -25,7 +25,7 @@ import {
   WaveBackupDecryptError,
 } from '@services/wavespaceBackupService';
 import { deleteMnemonic, storeMnemonic, storePassphrase } from '@services/secureStorageService';
-import { initializeWallet, mapSdkError } from '@services/walletService';
+import { disconnectWallet, initializeWallet, mapSdkError } from '@services/walletService';
 
 type Props = NativeStackScreenProps<
   OnboardingStackParamList,
@@ -152,6 +152,12 @@ export default function RestoreEncryptedBackupScreen({ navigation }: Props) {
 
       setInitStep('syncing');
       await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+
+      try {
+        await disconnectWallet();
+      } catch {
+        // Best-effort; useWallet reconnects after unlock.
+      }
 
       navigation.navigate('PinSetup');
     } catch (err) {

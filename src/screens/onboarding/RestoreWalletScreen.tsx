@@ -19,7 +19,7 @@ import {colors, spacing, typography} from '@theme/index';
 import {OnboardingStackParamList} from '@navigation/OnboardingStack';
 import {validateMnemonic} from '@services/mnemonicService';
 import {deleteMnemonic, storeMnemonic, storePassphrase} from '@services/secureStorageService';
-import {initializeWallet, mapSdkError} from '@services/walletService';
+import {disconnectWallet, initializeWallet, mapSdkError} from '@services/walletService';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'RestoreWallet'>;
 type WordCount = 12 | 24;
@@ -102,6 +102,12 @@ export default function RestoreWalletScreen({navigation}: Props) {
 
       setInitStep('syncing');
       await new Promise<void>(resolve => setTimeout(resolve, 1500));
+
+      try {
+        await disconnectWallet();
+      } catch {
+        // Best-effort; useWallet reconnects after unlock.
+      }
 
       navigation.navigate('PinSetup');
     } catch (err) {

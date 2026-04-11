@@ -26,6 +26,13 @@ const { AndroidConfig, withStringsXml } = require('expo/config-plugins');
 
 const appJson = require('./app.json');
 
+/**
+ * Home screen / app drawer icon (iOS + Android adaptive foreground).
+ * Expo reads this at prebuild / EAS build; changing the file requires a new native build.
+ * Prefer 1024×1024 PNG; Android adaptive foreground should keep the logo inside the center safe zone.
+ */
+const APP_LAUNCHER_ICON = './assets/images/logo-app-icon.png';
+
 /** Matches the historical Xcode native target and EAS credential mapping. */
 const NATIVE_PRODUCT_NAME = 'Wavespace';
 
@@ -56,7 +63,13 @@ function withAndroidAppDisplayName(config) {
   });
 }
 
-const { plugins: basePlugins = [], ios: baseIos = {}, ...restExpo } = appJson.expo;
+const {
+  plugins: basePlugins = [],
+  ios: baseIos = {},
+  android: baseAndroid = {},
+  icon: _iconFromAppJson,
+  ...restExpo
+} = appJson.expo;
 
 /** Baked into the native binary’s manifest during `eas build` (not patched by Metro later). */
 const breezApiKey = (
@@ -75,6 +88,14 @@ module.exports = {
   expo: {
     ...restExpo,
     name: NATIVE_PRODUCT_NAME,
+    icon: APP_LAUNCHER_ICON,
+    android: {
+      ...baseAndroid,
+      adaptiveIcon: {
+        ...(baseAndroid.adaptiveIcon ?? {}),
+        foregroundImage: APP_LAUNCHER_ICON,
+      },
+    },
     ios: {
       ...baseIos,
       infoPlist: {

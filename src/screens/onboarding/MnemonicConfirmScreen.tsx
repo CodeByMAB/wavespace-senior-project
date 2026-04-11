@@ -14,7 +14,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OnboardingStackParamList } from '@navigation/OnboardingStack';
 import { mnemonicToWords } from '@services/mnemonicService';
 import { deleteMnemonic, storeMnemonic } from '@services/secureStorageService';
-import { initializeWallet, mapSdkError } from '@services/walletService';
+import { disconnectWallet, initializeWallet, mapSdkError } from '@services/walletService';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'MnemonicConfirm'>;
 
@@ -91,6 +91,12 @@ export default function MnemonicConfirmScreen({ navigation, route }: Props) {
 
       setInitStep('syncing');
       await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+
+      try {
+        await disconnectWallet();
+      } catch {
+        // Best-effort; useWallet reconnects after unlock.
+      }
 
       navigation.navigate('PinSetup');
     } catch (err) {
