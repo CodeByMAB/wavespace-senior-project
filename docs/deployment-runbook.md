@@ -32,6 +32,8 @@ Regenerate or replace these in a design tool before release if upscaled placehol
   eas secret:create --name BREEZ_API_KEY --value "<your-key>" --type string
   ```
 
+  **Development / preview device builds:** `app.config.js` reads this variable on the **EAS build worker** and writes `expo.extra.breezApiKey` into the native manifest. If the secret was missing when you built the dev client, the binary has an empty key until you add the secret and **rebuild** (`eas build --profile development`). Separately, when you load JS from Metro on your Mac, **`EXPO_PUBLIC_BREEZ_API_KEY`** in a local `.env` is inlined into the JavaScript bundle—use that for quick local iteration without a new store/dev binary, after `npx expo start --dev-client --clear`.
+
   The `eas.json` production profile documents this requirement; production builds must resolve the secret in EAS (replace the placeholder `"..."` in `env` or rely on EAS Secrets as your team prefers).
 
 - **`google-service-account.json`** (Play Console API access) must live at the repo path referenced in `eas.json` **locally / in CI only**. It is **gitignored** and must never be committed.

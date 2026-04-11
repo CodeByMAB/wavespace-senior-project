@@ -39,6 +39,23 @@ import { getMnemonic, getPassphrase } from './secureStorageService';
 import { detectPaymentType, type PaymentType as AppPaymentType } from '@utils/bitcoin';
 
 let sdkInstance: BreezSdkInterface | null = null;
+let loggedBreezKeyDiagnostics = false;
+
+/** __DEV__ only: logs key source lengths (never the secret) to verify EAS embed vs EXPO_PUBLIC bundle. */
+function logBreezKeyDiagnosticsOnce(): void {
+  if (!__DEV__ || loggedBreezKeyDiagnostics) return;
+  loggedBreezKeyDiagnostics = true;
+  const extra = Constants.expoConfig?.extra as { breezApiKey?: string } | undefined;
+  const extraLen = typeof extra?.breezApiKey === 'string' ? extra.breezApiKey.trim().length : 0;
+  const publicLen =
+    typeof process.env.EXPO_PUBLIC_BREEZ_API_KEY === 'string'
+      ? process.env.EXPO_PUBLIC_BREEZ_API_KEY.trim().length
+      : 0;
+  console.log('[WalletService] Breez API key lengths (extra from app config / EAS build, EXPO_PUBLIC from Metro bundle):', {
+    extraBreezApiKeyLen: extraLen,
+    expoPublicBreezApiKeyLen: publicLen,
+  });
+}
 
 function resolveBreezApiKey(): string {
   const extra = Constants.expoConfig?.extra as { breezApiKey?: string } | undefined;
@@ -50,7 +67,7 @@ function resolveBreezApiKey(): string {
   const key = fromExtra || fromPublic;
   if (!key) {
     throw new Error(
-      'Breez API key is not configured. Add EXPO_PUBLIC_BREEZ_API_KEY to a .env file and restart Metro with a clean cache, or set BREEZ_API_KEY when building (see README).',
+      'Breez API key is not configured. For a dev client on device: add EXPO_PUBLIC_BREEZ_API_KEY to .env, run `npx expo start --dev-client --clear`, or rebuild with EAS after `eas secret:create --name BREEZ_API_KEY ...`.',
     );
   }
   return key;
@@ -228,6 +245,8 @@ export async function initializeWallet(): Promise<BreezSdkInterface> {
   if (sdkInstance) {
     return sdkInstance;
   }
+
+  logBreezKeyDiagnosticsOnce();
 
   const mnemonic = await getMnemonic();
   if (!mnemonic) {

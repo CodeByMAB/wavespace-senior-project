@@ -47,6 +47,19 @@ function withAndroidAppDisplayName(config) {
 
 const { plugins: basePlugins = [], ios: baseIos = {}, ...restExpo } = appJson.expo;
 
+/** Baked into the native binary’s manifest during `eas build` (not patched by Metro later). */
+const breezApiKey = (
+  process.env.BREEZ_API_KEY ||
+  process.env.EXPO_PUBLIC_BREEZ_API_KEY ||
+  ''
+).trim();
+
+if (process.env.EAS_BUILD === 'true' && !breezApiKey) {
+  throw new Error(
+    'EAS build: no Breez API key. Add a project secret and rebuild: eas secret:create --name BREEZ_API_KEY --value "<your-key>" --type string',
+  );
+}
+
 module.exports = {
   expo: {
     ...restExpo,
@@ -61,7 +74,7 @@ module.exports = {
     plugins: [...basePlugins, withAndroidAppDisplayName],
     extra: {
       ...(appJson.expo?.extra ?? {}),
-      breezApiKey: process.env.BREEZ_API_KEY || process.env.EXPO_PUBLIC_BREEZ_API_KEY || '',
+      breezApiKey,
       releaseStage: releaseStage(),
       easBuildProfile: easProfile ?? null,
     },
