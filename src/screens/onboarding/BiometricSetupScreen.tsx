@@ -9,6 +9,8 @@ import {Ionicons} from '@expo/vector-icons';
 import {colors, spacing, typography} from '@theme/index';
 import {OnboardingStackParamList} from '@navigation/OnboardingStack';
 import {useMarkOnboardingComplete} from '@context/OnboardingGateContext';
+import {useSettings} from '@context/SettingsContext';
+import {useAuthContext} from '@context/AuthContext';
 import {
   isBiometricAvailable,
   authenticateWithBiometric,
@@ -21,6 +23,8 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'BiometricSetup'>;
 export default function BiometricSetupScreen(_props: Props) {
   const insets = useSafeAreaInsets();
   const markOnboardingComplete = useMarkOnboardingComplete();
+  const {dispatch: settingsDispatch} = useSettings();
+  const {syncPersistedAuthState} = useAuthContext();
   const [biometricAvailable, setBiometricAvailable] = useState<boolean | null>(null);
   const [isEnabling, setIsEnabling] = useState(false);
 
@@ -34,6 +38,11 @@ export default function BiometricSetupScreen(_props: Props) {
       const metadata = existing ? JSON.parse(existing) : {};
       metadata.biometricEnabled = biometricEnabled;
       await storeWalletMetadata(JSON.stringify(metadata));
+      settingsDispatch({
+        type: 'SET_BIOMETRICS_ENABLED',
+        payload: biometricEnabled,
+      });
+      await syncPersistedAuthState();
       await AsyncStorage.setItem(ASYNC_KEYS.ONBOARDING_COMPLETED, 'true');
       markOnboardingComplete();
     } catch {

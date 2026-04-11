@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {ASYNC_KEYS} from '@constants/storage';
+import {getWalletMetadata} from '@services/secureStorageService';
 import type {DisplayUnit, Network} from '@/types/wallet';
 
 interface SettingsState {
@@ -15,8 +16,10 @@ interface SettingsState {
   network: Network;
   biometricsEnabled: boolean;
   hideBalance: boolean;
-  /** Seconds until lock after background; `0` = never. */
+  /** Seconds until lock after background; `0` = never. Ignored while `lockOnBackground` is true. */
   autoLockTimeout: number;
+  /** If true, session ends when the app is backgrounded (home / another app). */
+  lockOnBackground: boolean;
   /** Warn when balance exceeds the app-defined large-balance threshold. */
   securityAlertLargeBalance: boolean;
   /** Warn when there are unconfirmed / pending inbound or outbound funds. */
@@ -26,9 +29,10 @@ interface SettingsState {
 type SettingsAction =
   | {type: 'SET_DISPLAY_UNIT'; payload: DisplayUnit}
   | {type: 'SET_NETWORK'; payload: Network}
-  | {type: 'TOGGLE_BIOMETRICS'}
+  | {type: 'SET_BIOMETRICS_ENABLED'; payload: boolean}
   | {type: 'TOGGLE_HIDE_BALANCE'}
   | {type: 'SET_AUTO_LOCK_TIMEOUT'; payload: number}
+  | {type: 'SET_LOCK_ON_BACKGROUND'; payload: boolean}
   | {type: 'SET_SECURITY_ALERT_LARGE_BALANCE'; payload: boolean}
   | {type: 'SET_SECURITY_ALERT_UNCONFIRMED_TX'; payload: boolean};
 
@@ -38,6 +42,7 @@ const initialSettings: SettingsState = {
   biometricsEnabled: false,
   hideBalance: false,
   autoLockTimeout: 0,
+  lockOnBackground: true,
   securityAlertLargeBalance: true,
   securityAlertUnconfirmedTx: true,
 };
@@ -51,12 +56,20 @@ function settingsReducer(
       return {...state, displayUnit: action.payload};
     case 'SET_NETWORK':
       return {...state, network: action.payload};
-    case 'TOGGLE_BIOMETRICS':
-      return {...state, biometricsEnabled: !state.biometricsEnabled};
+    case 'SET_BIOMETRICS_ENABLED':
+      if (state.biometricsEnabled === action.payload) {
+        return state;
+      }
+      return {...state, biometricsEnabled: action.payload};
     case 'TOGGLE_HIDE_BALANCE':
       return {...state, hideBalance: !state.hideBalance};
     case 'SET_AUTO_LOCK_TIMEOUT':
       return {...state, autoLockTimeout: action.payload};
+    case 'SET_LOCK_ON_BACKGROUND':
+      if (state.lockOnBackground === action.payload) {
+        return state;
+      }
+      return {...state, lockOnBackground: action.payload};
     case 'SET_SECURITY_ALERT_LARGE_BALANCE':
       return {...state, securityAlertLargeBalance: action.payload};
     case 'SET_SECURITY_ALERT_UNCONFIRMED_TX':
@@ -102,6 +115,12 @@ export function SettingsProvider({children}: {children: ReactNode}) {
         String(action.payload),
       ).catch(() => {});
     }
+    if (action.type === 'SET_LOCK_ON_BACKGROUND') {
+      AsyncStorage.setItem(
+        ASYNC_KEYS.LOCK_ON_BACKGROUND,
+        action.payload ? 'true' : 'false',
+      ).catch(() => {});
+    }
     if (action.type === 'SET_DISPLAY_UNIT') {
       AsyncStorage.setItem(ASYNC_KEYS.DISPLAY_UNIT, action.payload).catch(
         () => {},
@@ -143,6 +162,14 @@ export function SettingsProvider({children}: {children: ReactNode}) {
           }
         }
 
+        const lockOnBgRaw = await AsyncStorage.getItem(ASYNC_KEYS.LOCK_ON_BACKGROUND);
+        if (!cancelled) {
+          rawDispatch({
+            type: 'SET_LOCK_ON_BACKGROUND',
+            payload: parseBoolPref(lockOnBgRaw, initialSettings.lockOnBackground),
+          });
+        }
+
         const unitRaw = await AsyncStorage.getItem(ASYNC_KEYS.DISPLAY_UNIT);
         if (!cancelled) {
           const unit = parseDisplayUnit(unitRaw);
@@ -173,6 +200,19 @@ export function SettingsProvider({children}: {children: ReactNode}) {
               type: 'SET_SECURITY_ALERT_UNCONFIRMED_TX',
               payload: parseBoolPref(unconfRaw, initialSettings.securityAlertUnconfirmedTx),
             });
+          }
+        }
+
+        const metaRaw = await getWalletMetadata();
+        if (!cancelled && metaRaw) {
+          try {
+            const m = JSON.parse(metaRaw) as {biometricEnabled?: boolean};
+            rawDispatch({
+              type: 'SET_BIOMETRICS_ENABLED',
+              payload: m.biometricEnabled === true,
+            });
+          } catch {
+            /* ignore */
           }
         }
       } catch {

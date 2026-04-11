@@ -9,6 +9,7 @@ import {
 } from '@breeztech/breez-sdk-spark-react-native';
 import {
   initializeWallet,
+  walletInitFailureIsNonRetriable,
   disconnectWallet,
   registerEventListener,
   removeEventListener,
@@ -192,7 +193,10 @@ export function useWallet(
       const prev = appStateRef.current;
       appStateRef.current = next;
 
-      if (next === 'background' || next === 'inactive') {
+      // Only tear down on true background. iOS uses `inactive` for Control Center,
+      // app switcher, and other transitions — disconnecting there races with
+      // `initializeWallet()` and surfaces "Wallet disconnected during initialization."
+      if (next === 'background') {
         sessionRef.current++;
         setState(INITIAL_STATE);
         setTransactions([]);
@@ -213,11 +217,7 @@ export function useWallet(
           }
           await disconnectWallet();
         })();
-      } else if (
-        next === 'active' &&
-        isAuthenticated &&
-        (prev === 'background' || prev === 'inactive')
-      ) {
+      } else if (next === 'active' && isAuthenticated && prev === 'background') {
         setAppStateNonce((n) => n + 1);
       }
     });
@@ -278,7 +278,22 @@ export function useWallet(
           break;
         } catch (err) {
           lastError = err;
-          logWalletOperation({ operation: 'initializeWallet', attempt, error: err });
+          logWalletOperation({
+            operation: 'initializeWallet',
+            attempt,
+            error: err,
+            expectedFailure: walletInitFailureIsNonRetriable(err),
+          });
+          if (walletInitFailureIsNonRetriable(err)) {
+            if (session === sessionRef.current) {
+              setState((prev) => ({
+                ...prev,
+                isLoading: false,
+                error: mapSdkError(err, 'wallet connection'),
+              }));
+            }
+            return;
+          }
           if (attempt < RETRY_DELAYS_MS.length) {
             await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
           } else {

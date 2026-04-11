@@ -4,6 +4,7 @@ import {SECURE_KEYS} from '@constants/storage';
 const memoryStore = new Map<string, string>();
 
 vi.mock('expo-secure-store', () => ({
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 0,
   getItemAsync: async (key: string) => memoryStore.get(key) ?? null,
   setItemAsync: async (key: string, value: string) => {
     memoryStore.set(key, value);
@@ -66,12 +67,13 @@ describe('secureStorageService', () => {
     await expect(getMnemonic()).resolves.toBeNull();
   });
 
-  it('deleteMnemonic clears MNEMONIC_KEY and MNEMONIC_ENC_KEY', async () => {
+  it('deleteMnemonic clears mnemonic ciphertext and encryption keys', async () => {
     const {storeMnemonic, deleteMnemonic} = await import('./secureStorageService');
     await storeMnemonic('word '.repeat(12).trim());
     await deleteMnemonic();
     expect(memoryStore.has(SECURE_KEYS.MNEMONIC_KEY)).toBe(false);
     expect(memoryStore.has(SECURE_KEYS.MNEMONIC_ENC_KEY)).toBe(false);
+    expect(memoryStore.has(SECURE_KEYS.MNEMONIC_ENC_KEY_V2)).toBe(false);
   });
 
   it('hasMnemonic is false before store and true after', async () => {

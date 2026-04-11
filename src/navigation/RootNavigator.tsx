@@ -26,7 +26,12 @@ export default function RootNavigator() {
   const { isAuthenticated, logout } = useAuthContext();
   const { state: settings } = useSettings();
   const prevAuthRef = useRef(isAuthenticated);
+  const isAuthenticatedRef = useRef(isAuthenticated);
   const backgroundAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
 
   useEffect(() => {
     AsyncStorage.getItem(ASYNC_KEYS.ONBOARDING_COMPLETED)
@@ -55,18 +60,31 @@ export default function RootNavigator() {
         const bg = backgroundAtRef.current;
         backgroundAtRef.current = null;
         if (
+          !settings.lockOnBackground &&
           bg != null &&
           settings.autoLockTimeout > 0 &&
           Date.now() - bg >= settings.autoLockTimeout * 1000
         ) {
           logout();
         }
-      } else if (next === 'background' || next === 'inactive') {
+        return;
+      }
+
+      if (next === 'background') {
+        if (settings.lockOnBackground && isAuthenticatedRef.current) {
+          logout();
+          return;
+        }
+        backgroundAtRef.current = Date.now();
+        return;
+      }
+
+      if (next === 'inactive' && !settings.lockOnBackground) {
         backgroundAtRef.current = Date.now();
       }
     });
     return () => sub.remove();
-  }, [settings.autoLockTimeout, logout]);
+  }, [settings.autoLockTimeout, settings.lockOnBackground, logout]);
 
   const markOnboardingComplete = useCallback(() => {
     setOnboardingComplete(true);

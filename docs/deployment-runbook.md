@@ -32,7 +32,7 @@ Regenerate or replace these in a design tool before release if upscaled placehol
   eas secret:create --name BREEZ_API_KEY --value "<your-key>" --type string
   ```
 
-  **Development / preview device builds:** `app.config.js` reads this variable on the **EAS build worker** and writes `expo.extra.breezApiKey` into the native manifest. If the secret was missing when you built the dev client, the binary has an empty key until you add the secret and **rebuild** (`eas build --profile development`). Separately, when you load JS from Metro on your Mac, **`EXPO_PUBLIC_BREEZ_API_KEY`** in a local `.env` is inlined into the JavaScript bundle—use that for quick local iteration without a new store/dev binary, after `npx expo start --dev-client --clear`.
+  **Development / preview device builds:** `app.config.js` reads this variable on the **EAS build worker** and writes `expo.extra.breezApiKey` into the native manifest. If the secret was missing when you built the dev client, the binary has an empty key until you add the secret and **rebuild** (`eas build --profile development`). Separately, when you load JS from Metro on your Mac, **`EXPO_PUBLIC_BREEZ_API_KEY`** in a local `.env` is inlined into the JavaScript bundle—use that for quick local iteration without a new store/dev binary. **After changing that env key, use `npm run start:dev`** (default dev script clears the Metro cache) or `npx expo start --dev-client --clear`; use **`npm run start:dev:fast`** only when you intentionally want to keep the Metro cache.
 
   The `eas.json` production profile documents this requirement; production builds must resolve the secret in EAS (replace the placeholder `"..."` in `env` or rely on EAS Secrets as your team prefers).
 

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useCallback, useState} from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
@@ -19,6 +19,7 @@ import type {SettingsStackParamList} from '@/types/navigation';
 import type {DisplayUnit} from '@/types/wallet';
 import {useSettings} from '@context/SettingsContext';
 import {useAuthContext} from '@context/AuthContext';
+import {useBiometricLoginToggle} from '@hooks/useBiometricLoginToggle';
 import {Button} from '@components/common/Button';
 import {CopyableText} from '@components/common/CopyableText';
 import {StepProgressBar} from '@components/common/StepProgressBar';
@@ -41,11 +42,22 @@ export function SettingsScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const {state: settings, dispatch: settingsDispatch} = useSettings();
+  const {
+    biometricsEnabled,
+    onBiometricToggle,
+    syncBiometricsFromWalletMetadata,
+  } = useBiometricLoginToggle();
   const {state: walletState} = useWallet();
   const {height: tipHeight, loading: tipLoading} = useMainnetTipHeight();
   const {logout} = useAuthContext();
   const [resetModalVisible, setResetModalVisible] = useState(false);
   const [resetStepIndex, setResetStepIndex] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      void syncBiometricsFromWalletMetadata();
+    }, [syncBiometricsFromWalletMetadata]),
+  );
 
   const blockHeightLabel = tipLoading
     ? '…'
@@ -182,12 +194,10 @@ export function SettingsScreen() {
             <Text style={styles.rowLabel}>Biometric Login</Text>
           </View>
           <Switch
-            value={settings.biometricsEnabled}
-            onValueChange={() =>
-              settingsDispatch({type: 'TOGGLE_BIOMETRICS'})
-            }
+            value={biometricsEnabled}
+            onValueChange={(v) => void onBiometricToggle(v)}
             trackColor={{false: colors.border, true: colors.primaryDark}}
-            thumbColor={settings.biometricsEnabled ? colors.primary : colors.textTertiary}
+            thumbColor={biometricsEnabled ? colors.primary : colors.textTertiary}
           />
         </View>
         <View style={styles.rowSeparator} />

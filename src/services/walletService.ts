@@ -85,6 +85,15 @@ function logBreezKeyDiagnosticsOnce(): void {
   );
 }
 
+/**
+ * True when reconnect/backoff will not fix the failure (missing config or no wallet on device).
+ */
+export function walletInitFailureIsNonRetriable(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const m = err.message.toLowerCase();
+  return m.includes('breez api key') || m.includes('no wallet found');
+}
+
 function resolveBreezApiKey(): string {
   const extra = Constants.expoConfig?.extra as { breezApiKey?: string } | undefined;
   const fromExtra = typeof extra?.breezApiKey === 'string' ? extra.breezApiKey.trim() : '';
@@ -95,7 +104,7 @@ function resolveBreezApiKey(): string {
   const key = fromExtra || fromPublic;
   if (!key) {
     throw new Error(
-      'Breez API key is not configured. For a dev client on device: add EXPO_PUBLIC_BREEZ_API_KEY to .env, run `npx expo start --dev-client --clear`, or rebuild with EAS after `eas secret:create --name BREEZ_API_KEY ...`.',
+      'Breez API key is not configured. Set a non-empty EXPO_PUBLIC_BREEZ_API_KEY in `.env` (or BREEZ_API_KEY for native embed), then run `npm run start:dev`. For EAS builds use `eas secret:create --name BREEZ_API_KEY ...` and rebuild.',
     );
   }
   return key;
@@ -227,8 +236,10 @@ export function logWalletOperation(params: {
   attempt?: number;
   error?: unknown;
   context?: Record<string, unknown>;
+  /** When true, `__DEV__` uses `console.log` instead of `console.warn` (expected onboarding / config gaps). */
+  expectedFailure?: boolean;
 }): void {
-  const { operation, attempt, error, context } = params;
+  const { operation, attempt, error, context, expectedFailure } = params;
   const entry: WalletLogEntry = {
     timestamp: new Date().toISOString(),
     operation,
@@ -245,7 +256,11 @@ export function logWalletOperation(params: {
   if (__DEV__) {
     const serialized = JSON.stringify(entry);
     if (error !== undefined) {
-      console.warn('[WalletService]', serialized);
+      if (expectedFailure) {
+        console.log('[WalletService]', serialized);
+      } else {
+        console.warn('[WalletService]', serialized);
+      }
     } else {
       console.log('[WalletService]', serialized);
     }

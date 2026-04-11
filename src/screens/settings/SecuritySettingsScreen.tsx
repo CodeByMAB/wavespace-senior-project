@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,21 +6,15 @@ import {
   TouchableOpacity,
   Switch,
   StyleSheet,
-  Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SettingsStackParamList } from '@/types/navigation';
 import { Header } from '@components/common/Header';
 import { useSettings } from '@context/SettingsContext';
-import { useAuthContext } from '@context/AuthContext';
-import {
-  isBiometricAvailable,
-  authenticateWithBiometric,
-} from '@services/authService';
-import { getWalletMetadata, storeWalletMetadata } from '@services/secureStorageService';
+import { useBiometricLoginToggle } from '@hooks/useBiometricLoginToggle';
 import { colors, spacing } from '@theme/index';
 
 type Nav = NativeStackNavigationProp<SettingsStackParamList>;
@@ -36,51 +30,17 @@ export function SecuritySettingsScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { state: settings, dispatch: settingsDispatch } = useSettings();
-  const { syncPersistedAuthState } = useAuthContext();
+  const {
+    biometricsEnabled,
+    onBiometricToggle,
+    syncBiometricsFromWalletMetadata,
+  } = useBiometricLoginToggle();
 
-  const onBiometricToggle = async (enabled: boolean) => {
-    if (enabled) {
-      const available = await isBiometricAvailable();
-      if (!available) {
-        Alert.alert(
-          'Unavailable',
-          'Biometric authentication is not available on this device.',
-        );
-        return;
-      }
-      const ok = await authenticateWithBiometric();
-      if (!ok) {
-        Alert.alert('Authentication failed', 'Biometric verification was cancelled or failed.');
-        return;
-      }
-      try {
-        const existing = await getWalletMetadata();
-        const metadata = existing ? JSON.parse(existing) : {};
-        metadata.biometricEnabled = true;
-        await storeWalletMetadata(JSON.stringify(metadata));
-        if (!settings.biometricsEnabled) {
-          settingsDispatch({ type: 'TOGGLE_BIOMETRICS' });
-        }
-        await syncPersistedAuthState();
-      } catch {
-        Alert.alert('Error', 'Could not enable biometrics.');
-      }
-      return;
-    }
-
-    try {
-      const existing = await getWalletMetadata();
-      const metadata = existing ? JSON.parse(existing) : {};
-      metadata.biometricEnabled = false;
-      await storeWalletMetadata(JSON.stringify(metadata));
-      if (settings.biometricsEnabled) {
-        settingsDispatch({ type: 'TOGGLE_BIOMETRICS' });
-      }
-      await syncPersistedAuthState();
-    } catch {
-      Alert.alert('Error', 'Could not update biometric preference.');
-    }
-  };
+  useFocusEffect(
+    useCallback(() => {
+      void syncBiometricsFromWalletMetadata();
+    }, [syncBiometricsFromWalletMetadata]),
+  );
 
   return (
     <View style={styles.root}>
@@ -110,11 +70,11 @@ export function SecuritySettingsScreen() {
               <Text style={styles.rowLabel}>Biometric login</Text>
             </View>
             <Switch
-              value={settings.biometricsEnabled}
+              value={biometricsEnabled}
               onValueChange={(v) => void onBiometricToggle(v)}
               trackColor={{ false: colors.border, true: colors.primaryDark }}
               thumbColor={
-                settings.biometricsEnabled ? colors.primary : colors.textTertiary
+                biometricsEnabled ? colors.primary : colors.textTertiary
               }
             />
           </View>
@@ -164,23 +124,61 @@ export function SecuritySettingsScreen() {
         </View>
 
         <Text style={styles.sectionTitle}>AUTO-LOCK</Text>
+        <Text style={styles.sectionHint}>
+          When you go home or open another app, the wallet can end your session so you must unlock
+          again with your PIN or biometrics.
+        </Text>
         <View style={styles.section}>
-          {AUTO_OPTIONS.map(({ seconds, label }, index) => (
-            <React.Fragment key={seconds}>
-              {index > 0 ? <View style={styles.separator} /> : null}
-              <TouchableOpacity
-                style={styles.row}
-                onPress={() =>
-                  settingsDispatch({ type: 'SET_AUTO_LOCK_TIMEOUT', payload: seconds })
-                }
-                activeOpacity={0.7}>
-                <Text style={styles.rowLabel}>{label}</Text>
-                {settings.autoLockTimeout === seconds ? (
-                  <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
-                ) : null}
-              </TouchableOpacity>
-            </React.Fragment>
-          ))}
+          <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="phone-portrait-outline" size={20} color={colors.textTertiary} />
+              <Text style={styles.rowLabel}>Lock when leaving app</Text>
+            </View>
+            <Switch
+              value={settings.lockOnBackground}
+              onValueChange={(v) =>
+                settingsDispatch({ type: 'SET_LOCK_ON_BACKGROUND', payload: v })
+              }
+              trackColor={{ false: colors.border, true: colors.primaryDark }}
+              thumbColor={
+                settings.lockOnBackground ? colors.primary : colors.textTertiary
+              }
+            />
+          </View>
+          {!settings.lockOnBackground ? (
+            <>
+              <View style={styles.separator} />
+              {AUTO_OPTIONS.map(({ seconds, label }, index) => (
+                <React.Fragment key={seconds}>
+                  {index > 0 ? <View style={styles.separator} /> : null}
+                  <TouchableOpacity
+                    style={styles.row}
+                    onPress={() =>
+                      settingsDispatch({ type: 'SET_AUTO_LOCK_TIMEOUT', payload: seconds })
+                    }
+                    activeOpacity={0.7}>
+                    <View style={styles.rowLeft}>
+                      <Ionicons name="time-outline" size={20} color={colors.textTertiary} />
+                      <Text style={styles.rowLabel}>{label}</Text>
+                    </View>
+                    {settings.autoLockTimeout === seconds ? (
+                      <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                    ) : null}
+                  </TouchableOpacity>
+                </React.Fragment>
+              ))}
+            </>
+          ) : (
+            <>
+              <View style={styles.separator} />
+              <View style={styles.row}>
+                <Text style={styles.mutedRowText}>
+                  Turn off &quot;Lock when leaving app&quot; to lock only after you have been away
+                  for a chosen time (while the app stays in the background).
+                </Text>
+              </View>
+            </>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -229,6 +227,12 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontSize: 15,
     color: colors.textPrimary,
+  },
+  mutedRowText: {
+    fontSize: 13,
+    color: colors.textTertiary,
+    lineHeight: 18,
+    flex: 1,
   },
   separator: {
     height: 1,

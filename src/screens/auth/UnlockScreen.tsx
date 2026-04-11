@@ -1,13 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  ActivityIndicator,
-  Vibration,
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Vibration } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuthContext } from '@context/AuthContext';
 
@@ -68,8 +61,12 @@ export default function UnlockScreen() {
   // Auto biometric once when user preference + hardware allow and not in active lockout countdown
   const didAutoBiometricRef = useRef(false);
   useEffect(() => {
+    if (!biometricAvailable) {
+      didAutoBiometricRef.current = false;
+      return;
+    }
     if (didAutoBiometricRef.current) return;
-    if (biometricAvailable && !lockoutActive) {
+    if (!lockoutActive) {
       didAutoBiometricRef.current = true;
       handleBiometric();
     }

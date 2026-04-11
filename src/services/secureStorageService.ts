@@ -23,23 +23,42 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 // --- Device-protected AES-256 key management ---
-// The encryption key is stored with requireAuthentication: true, tying access
-// to the device biometric/PIN lock (Keystore on Android, Keychain on iOS).
-// The AES-GCM ciphertext blobs are stored without requireAuthentication so that
-// existence checks (e.g. hasMnemonic) work without prompting the user.
+// V2 stores the AES key without OS biometric prompts so "Biometric Login" off + app PIN
+// does not trigger Face ID when opening the wallet. Access still requires an unlocked device
+// (iOS keychain accessibility). Legacy V1 used requireAuthentication: true (one-time migrate).
+
+/** iOS: limit key access to while device is unlocked; Android ignores `keychainAccessible`. */
+const ENC_KEY_V2_OPTIONS: SecureStore.SecureStoreOptions = {
+  requireAuthentication: false,
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
 
 async function getOrCreateEncryptionKey(): Promise<Uint8Array> {
-  const stored = await SecureStore.getItemAsync(SECURE_KEYS.MNEMONIC_ENC_KEY, {
-    requireAuthentication: true,
-  });
-  if (stored) {
-    return base64ToBytes(stored);
+  const v2 = await SecureStore.getItemAsync(SECURE_KEYS.MNEMONIC_ENC_KEY_V2, ENC_KEY_V2_OPTIONS);
+  if (v2) {
+    return base64ToBytes(v2);
   }
-  const key = randomBytes(32); // 256-bit AES key
+
+  const legacy = await SecureStore.getItemAsync(SECURE_KEYS.MNEMONIC_ENC_KEY, {
+    requireAuthentication: true,
+    authenticationPrompt: 'Update wallet security',
+  });
+  if (legacy) {
+    const key = base64ToBytes(legacy);
+    await SecureStore.setItemAsync(
+      SECURE_KEYS.MNEMONIC_ENC_KEY_V2,
+      bytesToBase64(key),
+      ENC_KEY_V2_OPTIONS,
+    );
+    await SecureStore.deleteItemAsync(SECURE_KEYS.MNEMONIC_ENC_KEY);
+    return key;
+  }
+
+  const key = randomBytes(32);
   await SecureStore.setItemAsync(
-    SECURE_KEYS.MNEMONIC_ENC_KEY,
+    SECURE_KEYS.MNEMONIC_ENC_KEY_V2,
     bytesToBase64(key),
-    { requireAuthentication: true },
+    ENC_KEY_V2_OPTIONS,
   );
   return key;
 }
@@ -70,9 +89,8 @@ function decryptAesGcm(key: Uint8Array, payload: string): string {
 
 /**
  * Encrypts the mnemonic with AES-256-GCM using a device-protected key and
- * persists the ciphertext blob. The encryption key is stored with
- * requireAuthentication: true, enforcing biometric/PIN access at key-retrieval
- * time (both on initial key generation here and on every subsequent read).
+ * persists the ciphertext blob. The encryption key uses V2 storage (no OS
+ * biometric prompt on read); the app PIN / optional biometric login gate access.
  */
 export async function storeMnemonic(mnemonic: string): Promise<void> {
   const key = await getOrCreateEncryptionKey();
@@ -81,8 +99,8 @@ export async function storeMnemonic(mnemonic: string): Promise<void> {
 }
 
 /**
- * Retrieves and decrypts the mnemonic. The device-protected key fetch triggers
- * biometric/PIN authentication. Returns null if no mnemonic is stored.
+ * Retrieves and decrypts the mnemonic. Returns null if no mnemonic is stored
+ * or decryption fails.
  */
 export async function getMnemonic(): Promise<string | null> {
   const stored = await SecureStore.getItemAsync(SECURE_KEYS.MNEMONIC_KEY);
@@ -102,6 +120,7 @@ export async function getMnemonic(): Promise<string | null> {
 export async function deleteMnemonic(): Promise<void> {
   await SecureStore.deleteItemAsync(SECURE_KEYS.MNEMONIC_KEY);
   await SecureStore.deleteItemAsync(SECURE_KEYS.MNEMONIC_ENC_KEY);
+  await SecureStore.deleteItemAsync(SECURE_KEYS.MNEMONIC_ENC_KEY_V2);
 }
 
 /**

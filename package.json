@@ -4,7 +4,8 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "start:dev": "expo start --dev-client",
+    "start:dev": "expo start --dev-client --clear",
+    "start:dev:fast": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
@@ -75,6 +76,32 @@
     "patch-package": "^8.0.1",
     "typescript": "~5.9.2",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.8.12",
+    "node-forge": "1.4.0",
+    "yaml": "2.8.3",
+    "minimatch@3": {
+      "brace-expansion": "1.1.14"
+    },
+    "minimatch@8": {
+      "brace-expansion": "2.0.3"
+    },
+    "minimatch@9": {
+      "brace-expansion": "2.0.3"
+    },
+    "readdirp@4": {
+      "picomatch": "4.0.4"
+    },
+    "micromatch": {
+      "picomatch": "4.0.4"
+    },
+    "anymatch": {
+      "picomatch": "2.3.2"
+    },
+    "jest-util": {
+      "picomatch": "2.3.2"
+    }
   },
   "private": true
 }

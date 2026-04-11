@@ -1,3 +1,14 @@
+const path = require('path');
+
+// Hydrate `process.env` from `.env*` before reading keys (covers tooling paths where
+// config is evaluated before Expo CLI’s usual env pass).
+try {
+  const { loadProjectEnv } = require('@expo/env');
+  loadProjectEnv(path.resolve(__dirname), { silent: true });
+} catch {
+  // ignore if @expo/env is unavailable
+}
+
 /**
  * Dynamic Expo config: injects Breez API key from the environment at build/start time.
  * EAS: set `BREEZ_API_KEY` as a secret. Local dev: use `EXPO_PUBLIC_BREEZ_API_KEY` in `.env`

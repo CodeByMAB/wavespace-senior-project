@@ -181,6 +181,7 @@ import {
   sendLightningPayment,
   sendLightningPaymentResolved,
   validateWithdrawalAddress,
+  walletInitFailureIsNonRetriable,
 } from './walletService';
 
 function paymentBase(): Payment {
@@ -278,6 +279,18 @@ describe('walletService', () => {
   afterEach(async () => {
     await disconnectWallet();
     vi.unstubAllGlobals();
+  });
+
+  describe('walletInitFailureIsNonRetriable', () => {
+    it('is true for missing API key and no-wallet errors', () => {
+      expect(walletInitFailureIsNonRetriable(new Error('Breez API key is not configured.'))).toBe(
+        true,
+      );
+      expect(
+        walletInitFailureIsNonRetriable(new Error('No wallet found. Please create or restore first.')),
+      ).toBe(true);
+      expect(walletInitFailureIsNonRetriable(new Error('network timeout'))).toBe(false);
+    });
   });
 
   describe('mapSdkError', () => {
