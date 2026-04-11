@@ -5,8 +5,18 @@
  *
  * EAS sets `EAS_BUILD_PROFILE` during cloud builds — used to label non-production installs
  * (home screen name, in-app banner, About).
+ *
+ * `expo.name` becomes the Xcode target / PRODUCT_NAME during prebuild. It must stay stable
+ * (`Wavespace`) so EAS provisioning and existing native projects keep matching the
+ * `Wavespace` target. Store- and home-screen-facing titles come from `app.json` →
+ * `CFBundleDisplayName` (iOS) and `app_name` in Android `strings.xml` (plugin below).
  */
+const { AndroidConfig, withStringsXml } = require('expo/config-plugins');
+
 const appJson = require('./app.json');
+
+/** Matches the historical Xcode native target and EAS credential mapping. */
+const NATIVE_PRODUCT_NAME = 'Wavespace';
 
 const easProfile = process.env.EAS_BUILD_PROFILE;
 
@@ -24,10 +34,31 @@ function releaseStage() {
   return undefined;
 }
 
+function withAndroidAppDisplayName(config) {
+  const label = displayName(appJson.expo.name);
+  return withStringsXml(config, (mod) => {
+    mod.modResults = AndroidConfig.Strings.setStringItem(
+      [{ $: { name: 'app_name' }, _: label }],
+      mod.modResults
+    );
+    return mod;
+  });
+}
+
+const { plugins: basePlugins = [], ios: baseIos = {}, ...restExpo } = appJson.expo;
+
 module.exports = {
   expo: {
-    ...appJson.expo,
-    name: displayName(appJson.expo.name),
+    ...restExpo,
+    name: NATIVE_PRODUCT_NAME,
+    ios: {
+      ...baseIos,
+      infoPlist: {
+        ...(baseIos.infoPlist ?? {}),
+        CFBundleDisplayName: displayName(appJson.expo.name),
+      },
+    },
+    plugins: [...basePlugins, withAndroidAppDisplayName],
     extra: {
       ...(appJson.expo?.extra ?? {}),
       breezApiKey: process.env.BREEZ_API_KEY || process.env.EXPO_PUBLIC_BREEZ_API_KEY || '',

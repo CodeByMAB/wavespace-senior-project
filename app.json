@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Wavespace",
+    "name": "Wavespace Bitcoin Wallet",
     "slug": "wavespace-wallet",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "icon": "./assets/images/logo-app-icon.png",
+    "icon": "./assets/images/icon.png",
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0D0D0D"
+      "backgroundColor": "#667eea"
     },
     "privacyPolicyUrl": "https://www.wavespace.com/privacy-policy",
     "runtimeVersion": {
@@ -26,7 +26,6 @@
       }
     },
     "ios": {
-      "icon": "./assets/images/logo-app-icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "com.wavespace.wallet",
       "buildNumber": "1",
@@ -53,8 +52,9 @@
         "ACCESS_NETWORK_STATE"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#F7931A",
-        "foregroundImage": "./assets/images/logo-app-icon.png",
+        "backgroundColor": "#667eea",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       }
     },
@@ -63,7 +63,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0D0D0D",
+          "backgroundColor": "#667eea",
           "image": "./assets/images/splash.png",
           "imageWidth": 200
         }
