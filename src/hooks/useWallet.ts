@@ -462,14 +462,7 @@ export function useWallet(
 
       cleanupPromiseRef.current = cleanup();
     };
-  }, [
-    isAuthenticated,
-    appStateNonce,
-    refreshBalance,
-    refreshNodeState,
-    refreshChannels,
-    updateOpeningProgressFromSdk,
-  ]);
+  }, [isAuthenticated, appStateNonce, refreshNodeState, refreshChannels, updateOpeningProgressFromSdk]);
 
   return {
     ...state,

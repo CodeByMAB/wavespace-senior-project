@@ -4,6 +4,7 @@ import React, {
   useReducer,
   useMemo,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 import { Alert } from 'react-native';
@@ -198,15 +199,18 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuthContext();
   const { state: settings } = useSettings();
+  const displayUnitRef = useRef(settings.displayUnit);
+  displayUnitRef.current = settings.displayUnit;
 
   const onPaymentEvent = useCallback((event: SdkEvent) => {
+    const displayUnit = displayUnitRef.current;
     switch (event.tag) {
       case SdkEvent_Tags.PaymentSucceeded: {
         const p = event.inner.payment;
         const isReceive = p.paymentType === PaymentType.Receive;
         const amt = Number(p.amount);
         const amtLabel = Number.isFinite(amt)
-          ? formatAmount(amt, settings.displayUnit)
+          ? formatAmount(amt, displayUnit)
           : String(p.amount);
         Alert.alert(
           isReceive ? 'Payment received' : 'Payment sent',
@@ -219,7 +223,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const isReceive = p.paymentType === PaymentType.Receive;
         const amt = Number(p.amount);
         const amtLabel = Number.isFinite(amt)
-          ? formatAmount(amt, settings.displayUnit)
+          ? formatAmount(amt, displayUnit)
           : String(p.amount);
         Alert.alert(
           'Payment failed',
@@ -230,7 +234,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       default:
         break;
     }
-  }, [settings.displayUnit]);
+  }, []);
 
   const sdk = useWalletSdk(isAuthenticated, onPaymentEvent);
   const [state, dispatch] = useReducer(walletReducer, initialState);

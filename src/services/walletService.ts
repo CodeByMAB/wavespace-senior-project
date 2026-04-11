@@ -40,21 +40,49 @@ import { detectPaymentType, type PaymentType as AppPaymentType } from '@utils/bi
 
 let sdkInstance: BreezSdkInterface | null = null;
 let loggedBreezKeyDiagnostics = false;
+/** Serialized concurrent `initializeWallet()` calls onto one in-flight connect. */
+let initializeWalletInFlight: Promise<BreezSdkInterface> | null = null;
+/**
+ * Set by `disconnectWallet()` while teardown runs. When true, an in-flight
+ * `initializeWallet()` must not publish the connected SDK to `sdkInstance` and
+ * must disconnect any instance that finished `connect()` after teardown was requested.
+ */
+let walletTeardownIntent = false;
+
+function breezApiKeyLengthDiagnostics(): {
+  extraBreezApiKeyLen: number;
+  expoPublicBreezApiKeyLen: number;
+  resolvedBreezApiKeyLen: number;
+} {
+  const extra = Constants.expoConfig?.extra as { breezApiKey?: string } | undefined;
+  const fromExtra = typeof extra?.breezApiKey === 'string' ? extra.breezApiKey.trim() : '';
+  const fromPublic =
+    typeof process.env.EXPO_PUBLIC_BREEZ_API_KEY === 'string'
+      ? process.env.EXPO_PUBLIC_BREEZ_API_KEY.trim()
+      : '';
+  const extraBreezApiKeyLen = fromExtra.length;
+  const expoPublicBreezApiKeyLen = fromPublic.length;
+  const resolved = fromExtra || fromPublic;
+  return {
+    extraBreezApiKeyLen,
+    expoPublicBreezApiKeyLen,
+    resolvedBreezApiKeyLen: resolved.length,
+  };
+}
 
 /** __DEV__ only: logs key source lengths (never the secret) to verify EAS embed vs EXPO_PUBLIC bundle. */
 function logBreezKeyDiagnosticsOnce(): void {
   if (!__DEV__ || loggedBreezKeyDiagnostics) return;
   loggedBreezKeyDiagnostics = true;
-  const extra = Constants.expoConfig?.extra as { breezApiKey?: string } | undefined;
-  const extraLen = typeof extra?.breezApiKey === 'string' ? extra.breezApiKey.trim().length : 0;
-  const publicLen =
-    typeof process.env.EXPO_PUBLIC_BREEZ_API_KEY === 'string'
-      ? process.env.EXPO_PUBLIC_BREEZ_API_KEY.trim().length
-      : 0;
-  console.log('[WalletService] Breez API key lengths (extra from app config / EAS build, EXPO_PUBLIC from Metro bundle):', {
-    extraBreezApiKeyLen: extraLen,
-    expoPublicBreezApiKeyLen: publicLen,
-  });
+  const d = breezApiKeyLengthDiagnostics();
+  console.log(
+    '[WalletService] Breez API key lengths (extra = app config / native binary, expoPublic = Metro bundle, resolved = value passed to SDK):',
+    {
+      extraBreezApiKeyLen: d.extraBreezApiKeyLen,
+      expoPublicBreezApiKeyLen: d.expoPublicBreezApiKeyLen,
+      resolvedBreezApiKeyLen: d.resolvedBreezApiKeyLen,
+    },
+  );
 }
 
 function resolveBreezApiKey(): string {
@@ -245,40 +273,82 @@ export async function initializeWallet(): Promise<BreezSdkInterface> {
   if (sdkInstance) {
     return sdkInstance;
   }
-
-  logBreezKeyDiagnosticsOnce();
-
-  const mnemonic = await getMnemonic();
-  if (!mnemonic) {
-    throw new Error('No wallet found. Please create or restore a wallet first.');
+  if (initializeWalletInFlight) {
+    return initializeWalletInFlight;
   }
 
-  const passphrase = await getPassphrase();
+  initializeWalletInFlight = (async (): Promise<BreezSdkInterface> => {
+    try {
+      logBreezKeyDiagnosticsOnce();
 
-  const seed = new Seed.Mnemonic({
-    mnemonic,
-    passphrase: passphrase ?? undefined,
-  });
+      const mnemonic = await getMnemonic();
+      if (!mnemonic) {
+        throw new Error('No wallet found. Please create or restore a wallet first.');
+      }
 
-  const config = buildSdkConfig(Network.Mainnet);
+      if (walletTeardownIntent) {
+        throw new Error('Wallet disconnected during initialization.');
+      }
 
-  const docDir = (documentDirectory ?? '').replace(/^file:\/\//, '');
-  if (!docDir) {
-    throw new Error(
-      'App storage is not available (document directory missing). Use an iOS/Android development build with expo-file-system.',
-    );
+      const passphrase = await getPassphrase();
+
+      const seed = new Seed.Mnemonic({
+        mnemonic,
+        passphrase: passphrase ?? undefined,
+      });
+
+      const config = buildSdkConfig(Network.Mainnet);
+
+      const docDir = (documentDirectory ?? '').replace(/^file:\/\//, '');
+      if (!docDir) {
+        throw new Error(
+          'App storage is not available (document directory missing). Use an iOS/Android development build with expo-file-system.',
+        );
+      }
+      const storageDir = `${docDir}breez-sdk`;
+
+      if (walletTeardownIntent) {
+        throw new Error('Wallet disconnected during initialization.');
+      }
+
+      const connected = await connect({ config, seed, storageDir });
+
+      if (walletTeardownIntent) {
+        try {
+          await connected.disconnect();
+        } catch {
+          // Ignore disconnect errors during teardown
+        }
+        connectedSessionNetwork = null;
+        throw new Error('Wallet disconnected during initialization.');
+      }
+
+      sdkInstance = connected;
+      connectedSessionNetwork = 'mainnet';
+
+      logWalletOperation({
+        operation: 'initializeWallet',
+        context: { network: connectedSessionNetwork },
+      });
+
+      return sdkInstance;
+    } finally {
+      initializeWalletInFlight = null;
+    }
+  })();
+
+  return initializeWalletInFlight;
+}
+
+async function disconnectCurrentSdkInstance(): Promise<void> {
+  if (!sdkInstance) return;
+  try {
+    await sdkInstance.disconnect();
+  } catch {
+    // Ignore disconnect errors during cleanup
   }
-  const storageDir = `${docDir}breez-sdk`;
-
-  sdkInstance = await connect({ config, seed, storageDir });
-  connectedSessionNetwork = 'mainnet';
-
-  logWalletOperation({
-    operation: 'initializeWallet',
-    context: { network: connectedSessionNetwork },
-  });
-
-  return sdkInstance;
+  sdkInstance = null;
+  connectedSessionNetwork = null;
 }
 
 /**
@@ -286,14 +356,21 @@ export async function initializeWallet(): Promise<BreezSdkInterface> {
  * Call on wallet reset or app lock.
  */
 export async function disconnectWallet(): Promise<void> {
-  if (sdkInstance) {
-    try {
-      await sdkInstance.disconnect();
-    } catch {
-      // Ignore disconnect errors during cleanup
+  walletTeardownIntent = true;
+  try {
+    await disconnectCurrentSdkInstance();
+
+    if (initializeWalletInFlight) {
+      try {
+        await initializeWalletInFlight;
+      } catch {
+        // Init rejects when teardown wins over a pending connect; ignore
+      }
     }
-    sdkInstance = null;
-    connectedSessionNetwork = null;
+
+    await disconnectCurrentSdkInstance();
+  } finally {
+    walletTeardownIntent = false;
   }
 }
 
